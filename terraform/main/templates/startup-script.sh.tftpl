@@ -1,0 +1,128 @@
+#!/bin/bash
+set -euxo pipefail
+
+PROJECT_ID="${project_id}"
+DOMAIN="${domain}"
+SSL_EMAIL="${ssl_email}"
+GENERIC_TIMEZONE="${generic_timezone}"
+GITHUB_REPO="${github_repo}"
+TS_SECRET_ID="${ts_secret_id}"
+
+# docker-compose.yml keeps n8n's own SUBDOMAIN/DOMAIN_NAME split (unchanged
+# from n8n's quickstart sample), so the single `domain` Terraform variable
+# (e.g. n8n.u-rei.com, or n8n-test.u-rei.com during blue/green validation)
+# is split here instead of touching the compose file.
+SUBDOMAIN="$${DOMAIN%%.*}"
+DOMAIN_NAME="$${DOMAIN#*.}"
+
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl gnupg jq git unattended-upgrades rsync
+
+# --- automatic security updates ---
+cat >/etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+systemctl enable --now unattended-upgrades
+
+# --- data disk: format once, mount idempotently ---
+# Mounted before Docker is installed so `data-root` below can point here
+# from Docker's very first start - Docker never writes application data to
+# the boot disk.
+DATA_DISK=/dev/disk/by-id/google-n8n-data
+mkdir -p /opt/n8n/docker-data
+if ! blkid "$DATA_DISK" >/dev/null 2>&1; then
+  mkfs.ext4 -m 0 -F "$DATA_DISK"
+fi
+if ! mountpoint -q /opt/n8n/docker-data; then
+  mount "$DATA_DISK" /opt/n8n/docker-data
+fi
+grep -q n8n-data /etc/fstab || echo "$DATA_DISK /opt/n8n/docker-data ext4 discard,defaults,nofail 0 2" >> /etc/fstab
+
+# --- swap: e2-micro's 1GB RAM isn't enough for traefik+n8n without it ---
+SWAPFILE=/swapfile
+if [ ! -f "$SWAPFILE" ]; then
+  dd if=/dev/zero of="$SWAPFILE" bs=1M count=1024
+  chmod 600 "$SWAPFILE"
+  mkswap "$SWAPFILE"
+fi
+if ! swapon --show=NAME --noheadings | grep -q "^$SWAPFILE$"; then
+  swapon "$SWAPFILE"
+fi
+grep -q "^$SWAPFILE " /etc/fstab || echo "$SWAPFILE none swap defaults 0 0" >> /etc/fstab
+
+# --- docker ---
+# data-root lives on the attached data disk (see above), not the boot
+# disk, so the named volumes docker-compose.yml declares (n8n_data,
+# traefik_data) survive VM destroy/recreate without any compose file
+# changes.
+mkdir -p /etc/docker
+DAEMON_JSON_CHANGED=0
+if [ "$(cat /etc/docker/daemon.json 2>/dev/null)" != '{"data-root": "/opt/n8n/docker-data"}' ]; then
+  echo '{"data-root": "/opt/n8n/docker-data"}' > /etc/docker/daemon.json
+  DAEMON_JSON_CHANGED=1
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+    > /etc/apt/sources.list.d/docker.list
+  apt-get update
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+elif [ "$DAEMON_JSON_CHANGED" = "1" ]; then
+  systemctl restart docker
+fi
+
+# --- tailscale (idempotent: only join if not already up) ---
+if ! command -v tailscale >/dev/null 2>&1; then
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
+
+fetch_secret() {
+  local secret_id="$1"
+  local token
+  token=$(curl -s -H "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | jq -r .access_token)
+  curl -s -H "Authorization: Bearer $token" \
+    "https://secretmanager.googleapis.com/v1/projects/$PROJECT_ID/secrets/$secret_id/versions/latest:access" \
+    | jq -r '.payload.data' | base64 --decode
+}
+
+if [ "$(tailscale status --json | jq -r .BackendState)" != "Running" ]; then
+  TS_AUTHKEY=$(fetch_secret "$TS_SECRET_ID")
+  tailscale up --authkey="$TS_AUTHKEY" --ssh --hostname=n8n --advertise-tags=tag:n8n-server
+fi
+
+# --- application source (this is a public repo; no credentials needed) ---
+# A pull failure (e.g. transient network blip during a reboot) must not
+# abort the whole script via `set -e` - falling back to the already-cloned
+# copy lets n8n keep starting instead of staying down until the next
+# successful boot.
+APP_DIR=/opt/n8n/app
+if [ -d "$APP_DIR/.git" ]; then
+  git -C "$APP_DIR" pull --ff-only || echo "WARNING: git pull failed, using existing local checkout"
+else
+  rm -rf "$APP_DIR"
+  git clone --depth 1 "https://github.com/$GITHUB_REPO.git" "$APP_DIR"
+fi
+
+cat >/opt/n8n/.env <<EOF
+SUBDOMAIN=$SUBDOMAIN
+DOMAIN_NAME=$DOMAIN_NAME
+SSL_EMAIL=$SSL_EMAIL
+GENERIC_TIMEZONE=$GENERIC_TIMEZONE
+EOF
+chmod 600 /opt/n8n/.env
+
+# docker-compose.yml declares n8n_data/traefik_data as `external: true`
+# (unchanged from n8n's own sample), so `docker compose up` won't create
+# them itself - they must already exist. `docker volume create` is a no-op
+# if the volume already exists, so this is safe to repeat on every boot.
+docker volume create n8n_data >/dev/null
+docker volume create traefik_data >/dev/null
+
+cd "$APP_DIR/n8n"
+docker compose --env-file /opt/n8n/.env up -d

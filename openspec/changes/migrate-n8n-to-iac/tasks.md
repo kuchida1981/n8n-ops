@@ -1,49 +1,49 @@
 ## 1. リポジトリ構成の初期化
 
-- [ ] 1.1 `terraform/bootstrap`, `terraform/main`, `n8n`, `.github/workflows` のディレクトリ構成を作成
-- [ ] 1.2 `.gitignore`に`*.tfstate*`, `.terraform/`等を追加し、機密情報が誤ってコミットされない状態にする
+- [x] 1.1 `terraform/bootstrap`, `terraform/main`, `n8n`, `.github/workflows` のディレクトリ構成を作成
+- [x] 1.2 `.gitignore`に`*.tfstate*`, `.terraform/`等を追加し、機密情報が誤ってコミットされない状態にする
 
 ## 2. Bootstrap(手動・1回のみ)
 
-- [ ] 2.1 GCSバケット(Terraform remote state用)を`gcloud`で手動作成する手順をREADMEに記載
-- [ ] 2.2 GitHub Actions用のWorkload Identity Pool/Providerおよび管理用サービスアカウントを手動作成する手順をREADMEに記載
-- [ ] 2.3 vaultwarden-opsが既に発行済みのTailscale OAuthクライアントを再利用できるか確認し、再利用できない場合のみ新規発行手順をREADMEに記載
-- [ ] 2.4 上記で得られた値をGitHub Actions Secretsに登録する手順をREADMEに記載
+- [x] 2.1 GCSバケット(Terraform remote state用)を`gcloud`で手動作成する手順をREADMEに記載
+- [x] 2.2 GitHub Actions用のWorkload Identity Pool/Providerおよび管理用サービスアカウントを手動作成する手順をREADMEに記載
+- [x] 2.3 vaultwarden-opsが既に発行済みのTailscale OAuthクライアントを再利用できるか確認し、再利用できない場合のみ新規発行手順をREADMEに記載(README「2. Tailscale OAuthクライアントの発行」に両パターンを記載。実際にどちらが使えるかの確認自体はPhase A実行時に行う)
+- [x] 2.4 上記で得られた値をGitHub Actions Secretsに登録する手順をREADMEに記載
 
 ## 3. Terraform: GCPコアインフラ (`gcp-infrastructure`)
 
-- [ ] 3.1 `terraform/main`にGCSバックエンド設定を追加
-- [ ] 3.2 `e2-micro`のVMインスタンスをus-west1(既存VMと同じゾーン`us-west1-b`)に定義
-- [ ] 3.3 静的External IPリソースを定義しVMにアタッチ
-- [ ] 3.4 ファイアウォールルールを定義(このVM向けには公開80/443のみ、SSHは許可しない)
-- [ ] 3.5 n8nデータ用の専用Persistent Diskを定義し、`lifecycle { prevent_destroy = true }`を設定してVMにアタッチ
-- [ ] 3.6 Google Secret ManagerにTailscale authkey用のシークレットリソースを定義
-- [ ] 3.7 CI/Terraform用管理サービスアカウントとVM実行時サービスアカウントを分離して定義し、実行時SAには対象シークレットへの`secretAccessor`のみを付与
-- [ ] 3.8 起動時にunattended-upgradesを有効化するstartup-script断片を追加
+- [x] 3.1 `terraform/main`にGCSバックエンド設定を追加
+- [x] 3.2 `e2-micro`のVMインスタンスをus-west1(既存VMと同じゾーン`us-west1-b`)に定義
+- [x] 3.3 静的External IPリソースを定義しVMにアタッチ
+- [x] 3.4 ファイアウォールルールを定義(このVM向けには公開80/443のみ、SSHは許可しない)
+- [x] 3.5 n8nデータ用の専用Persistent Diskを定義し、`lifecycle { prevent_destroy = true }`を設定してVMにアタッチ
+- [x] 3.6 Google Secret ManagerにTailscale authkey用のシークレットリソースを定義
+- [x] 3.7 CI/Terraform用管理サービスアカウントとVM実行時サービスアカウントを分離して定義し、実行時SAには対象シークレットへの`secretAccessor`のみを付与
+- [x] 3.8 起動時にunattended-upgradesを有効化するstartup-script断片を追加
 
 ## 4. Terraform: Tailscale接続 (`tailscale-connectivity`)
 
-- [ ] 4.1 `tailscale`プロバイダを設定(vaultwarden-opsと同じtailnetを操作するため、Terraform stateは別リポジトリ・別stateのまま)
-- [ ] 4.2 apply前に、Tailscale管理画面(https://login.tailscale.com/admin/acl/file )で現行ACLポリシーの内容(vaultwarden-opsが管理する`tag:vaultwarden-server`関連の設定)を取得する
-- [ ] 4.3 `tailscale_acl`リソースを、4.2で取得した既存内容に`tag:n8n-server`のtagOwners・sshルールを追加合成した完全なポリシーとして定義する(vaultwarden-opsの`terraform/main/tailscale.tf`を参照し、既存のtagOwners/acls/sshブロックを漏れなく含める)
-- [ ] 4.4 `tailscale_tailnet_key`でタグ付き認証キーを発行し、Secret Managerのシークレットバージョンとして書き込む
-- [ ] 4.5 VMのstartup-scriptにSecret Managerから認証キーを取得し`tailscale up --ssh --hostname=n8n --advertise-tags=tag:n8n-server`を無人実行する処理を追加(冪等: 既にtailnetに参加済みならスキップ)
+- [x] 4.1 `tailscale`プロバイダを設定(vaultwarden-opsと同じtailnetを操作するため、Terraform stateは別リポジトリ・別stateのまま)
+- [ ] 4.2 apply前に、Tailscale管理画面(https://login.tailscale.com/admin/acl/file )で現行ACLポリシーの内容(vaultwarden-opsが管理する`tag:vaultwarden-server`関連の設定)を取得する(実apply直前に行う運用上のチェックのため未実施。`terraform/main/tailscale.tf`はこのセッションで読んだvaultwarden-ops側`tailscale.tf`の内容を反映済みだが、apply前に管理画面の最新状態との差分がないか必ず再確認すること)
+- [x] 4.3 `tailscale_acl`リソースを、4.2で取得した既存内容に`tag:n8n-server`のtagOwners・sshルールを追加合成した完全なポリシーとして定義する(vaultwarden-opsの`terraform/main/tailscale.tf`を参照し、既存のtagOwners/acls/sshブロックを漏れなく含める)
+- [x] 4.4 `tailscale_tailnet_key`でタグ付き認証キーを発行し、Secret Managerのシークレットバージョンとして書き込む
+- [x] 4.5 VMのstartup-scriptにSecret Managerから認証キーを取得し`tailscale up --ssh --hostname=n8n --advertise-tags=tag:n8n-server`を無人実行する処理を追加(冪等: 既にtailnetに参加済みならスキップ)
 
 ## 5. n8nアプリケーション基盤 (`n8n-service`)
 
-- [ ] 5.1 現行の`docker-compose.yml`/`base.yml`をリポジトリの`n8n/`ディレクトリへ移し、n8nイメージをリテラルタグ(`latest`ではなく具体的なバージョン)に変更する。それ以外の構造(named volume `n8n_data`/`traefik_data`, Traefikのtlschallenge設定等)は変更しない
-- [ ] 5.2 startup-scriptにDocker/Docker Composeのインストール処理を追加
-- [ ] 5.3 startup-scriptに、専用Persistent Diskをフォーマット・マウントし(未フォーマット/未マウント時のみ、`/etc/fstab`への重複エントリなし)、`/etc/docker/daemon.json`の`data-root`をそのマウントパス配下に向けてDockerを(必要な場合のみ)再起動する処理を追加
-- [ ] 5.4 startup-scriptに、swapfileの作成(`dd`+`mkswap`)・有効化(`swapon`)・`/etc/fstab`への永続化を、冪等なガード付きで追加する
-- [ ] 5.5 startup-scriptに、GitHubからn8nのdocker-compose.yml一式をcloneし(git pull失敗時は既存チェックアウトにフォールバック)、`SUBDOMAIN`/`DOMAIN_NAME`/`SSL_EMAIL`/`GENERIC_TIMEZONE`等を含む`.env`を生成し、`docker compose up -d`を実行する処理を追加
-- [ ] 5.6 Terraform変数`domain`(vaultwarden-opsの`domain`変数と同様のパターン)を定義し、startup-scriptのSUBDOMAIN/DOMAIN_NAMEに渡す
+- [x] 5.1 現行の`docker-compose.yml`をリポジトリの`n8n/`ディレクトリへ移し、n8nイメージをリテラルタグ(`2.26.4`、稼働中バージョンをSSHで確認済み)に変更する。それ以外の構造(named volume `n8n_data`/`traefik_data`, Traefikのtlschallenge設定等)は変更しない。`base.yml`は現行docker-compose.ymlの元になった未使用の参考ファイル(実際には`docker compose`から参照されていない)と判断し、移設対象から除外した
+- [x] 5.2 startup-scriptにDocker/Docker Composeのインストール処理を追加
+- [x] 5.3 startup-scriptに、専用Persistent Diskをフォーマット・マウントし(未フォーマット/未マウント時のみ、`/etc/fstab`への重複エントリなし)、`/etc/docker/daemon.json`の`data-root`をそのマウントパス配下に向けてDockerを(必要な場合のみ)再起動する処理を追加
+- [x] 5.4 startup-scriptに、swapfileの作成(`dd`+`mkswap`)・有効化(`swapon`)・`/etc/fstab`への永続化を、冪等なガード付きで追加する
+- [x] 5.5 startup-scriptに、GitHubからn8nのdocker-compose.yml一式をcloneし(git pull失敗時は既存チェックアウトにフォールバック)、`SUBDOMAIN`/`DOMAIN_NAME`/`SSL_EMAIL`/`GENERIC_TIMEZONE`等を含む`.env`を生成し、`docker compose up -d`を実行する処理を追加(external volumeのため`docker volume create`の事前実行も追加)
+- [x] 5.6 Terraform変数`domain`(vaultwarden-opsの`domain`変数と同様のパターン)を定義し、startup-scriptのSUBDOMAIN/DOMAIN_NAMEに渡す(デフォルト値は`n8n-test.u-rei.com`。カットオーバー時にデフォルト値を`n8n.u-rei.com`に変更するPRを出す運用)
 
 ## 6. GitHub Actions CI/CD (`deployment-pipeline`)
 
-- [ ] 6.1 WIFを使ったGCP認証ステップを含む`terraform plan`ワークフロー(PRトリガー)を作成
-- [ ] 6.2 PRにplan結果をコメントする処理を追加
-- [ ] 6.3 GitHub Environmentのprotection ruleで承認ゲート付きの`terraform apply`ワークフロー(mainマージトリガー)を作成
-- [ ] 6.4 Dependabotの設定を追加し、`n8n/docker-compose.yml`のn8nイメージタグを自動更新PR化する
+- [x] 6.1 WIFを使ったGCP認証ステップを含む`terraform plan`ワークフロー(PRトリガー)を作成
+- [x] 6.2 PRにplan結果をコメントする処理を追加
+- [x] 6.3 GitHub Environmentのprotection ruleで承認ゲート付きの`terraform apply`ワークフロー(mainマージトリガー)を作成
+- [x] 6.4 Dependabotの設定を追加し、`n8n/docker-compose.yml`のn8nイメージタグを自動更新PR化する
 
 ## 7. Phase A: 空のn8nでインフラ検証(テストサブドメイン)
 
@@ -71,4 +71,4 @@
 
 ## 9. ドキュメント
 
-- [ ] 9.1 README.mdに全体アーキテクチャ図、bootstrap手順、DNS手動設定手順、blue/greenカットオーバー手順、ロードマップ(NASバックアップ・Caddy統一・SSH公開是正)を記載
+- [x] 9.1 README.mdに全体アーキテクチャ図、bootstrap手順、DNS手動設定手順、blue/greenカットオーバー手順、ロードマップ(NASバックアップ・Caddy統一・SSH公開是正)を記載

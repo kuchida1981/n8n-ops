@@ -1,0 +1,46 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/main/**"
+      - ".github/workflows/terraform-apply.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    # Requires a GitHub Environment named "production" with a required
+    # reviewers protection rule configured in repo Settings > Environments.
+    # That's what actually pauses this job for manual approval - it cannot
+    # be expressed in workflow YAML alone.
+    environment: production
+    defaults:
+      run:
+        working-directory: terraform/main
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+
+      - name: Terraform Apply
+        env:
+          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_github_repo: ${{ github.repository }}
+          TF_VAR_tailscale_tailnet: ${{ secrets.TAILSCALE_TAILNET }}
+          TF_VAR_tailscale_oauth_client_id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          TF_VAR_tailscale_oauth_client_secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+        run: terraform apply -no-color -auto-approve
