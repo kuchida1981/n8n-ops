@@ -1,0 +1,83 @@
+version: "3"
+
+services:
+  traefik:
+    # Pinned to a literal tag (not a variable) for the same reason as n8n's
+    # image below - Dependabot's docker-compose ecosystem can then detect
+    # and bump it. Set to the version actually running in production
+    # (confirmed via `docker exec n8n-traefik-1 traefik version` over SSH),
+    # not an assumed/guessed one - traefik v2->v3 is a breaking config
+    # change, so guessing wrong here would be a silent downgrade.
+    image: "traefik:v3.7.5"
+    restart: always
+    command:
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+        #- "--entrypoints.web.http.redirections.entryPoint.permanent=true"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+        #- "--certificatesresolvers.mytlschallenge.acme.caserver"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - traefik_data:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  n8n:
+    # Pinned to a literal tag (not a variable) so Dependabot's
+    # docker-compose ecosystem can detect and bump it - it cannot resolve
+    # shell/env interpolation. Upgrading is still just
+    # `docker compose pull && docker compose up -d` per n8n's own docs;
+    # bumping this tag is now the deliberate step that drives that.
+    image: docker.n8n.io/n8nio/n8n:2.26.4
+    restart: always
+    ports:
+      - "127.0.0.1:5678:5678"
+    dns:
+      - 100.100.100.100
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.n8n.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)
+      - traefik.http.routers.n8n.tls=true
+      - traefik.http.routers.n8n.entrypoints=web,websecure
+      - traefik.http.routers.n8n.tls.certresolver=mytlschallenge
+      - traefik.http.middlewares.n8n.headers.SSLRedirect=true
+      - traefik.http.middlewares.n8n.headers.STSSeconds=315360000
+      - traefik.http.middlewares.n8n.headers.browserXSSFilter=true
+      - traefik.http.middlewares.n8n.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.n8n.headers.forceSTSHeader=true
+      - traefik.http.middlewares.n8n.headers.SSLHost=${DOMAIN_NAME}
+      - traefik.http.middlewares.n8n.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.n8n.headers.STSPreload=true
+      - traefik.http.routers.n8n.middlewares=n8n@docker
+    environment:
+      - N8N_HOST=${SUBDOMAIN}.${DOMAIN_NAME}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - N8N_RUNNERS_ENABLED=false
+      #- N8N_RUNNERS_MAX_CONCURRENCY=2
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=true
+      - DB_SQLITE_POOL_SIZE=2
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_GIT_NODE_DISABLE_BARE_REPOS=true
+      - EXECUTION_DATA_PRUNE=true
+      - EXECUTION_DATA_MAX_AGE=7
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  traefik_data:
+    external: true
+  n8n_data:
+    external: true

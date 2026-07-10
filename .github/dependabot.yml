@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: "docker-compose"
+    directory: "/n8n"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "terraform"
+    directory: "/terraform/main"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "terraform"
+    directory: "/terraform/bootstrap"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
