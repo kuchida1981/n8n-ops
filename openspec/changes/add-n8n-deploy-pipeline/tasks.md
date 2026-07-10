@@ -31,8 +31,8 @@
 
 ## 6. 動作確認
 
-- [ ] 6.1 dependabot.yml変更後、Dependabotがn8nのバージョンPRを実際に作成することを確認する(次回の定期実行、または`gh api`でのmanual trigger相当の確認手段を検討する)
-- [ ] 6.2 テスト用に軽微な変更(例: 既存タグのまま`n8n/`配下の無害な差分)をmainにマージし、n8n-deploy.ymlが起動し`production` Environmentの承認待ちで一時停止することを確認する
-- [ ] 6.3 承認し、IAP tunnel経由のSSH接続・`docker compose pull/up`が成功することを確認する
-- [ ] 6.4 デプロイ後もn8nの既存ワークフロー(vaultwarden死活監視含む)が正常稼働していることを確認する
+- [x] 6.1 dependabot.yml変更後、Dependabotがn8nのバージョンPRを実際に作成することを確認する(次回の定期実行、または`gh api`でのmanual trigger相当の確認手段を検討する)(PR #19、`Bump n8nio/n8n from 2.26.4 to 2.29.10`が自動作成された)
+- [x] 6.2 テスト用に軽微な変更(例: 既存タグのまま`n8n/`配下の無害な差分)をmainにマージし、n8n-deploy.ymlが起動し`production` Environmentの承認待ちで一時停止することを確認する(PR #19マージで実施。テスト用の無害な差分ではなく、実際のバージョンアップで検証した)
+- [x] 6.3 承認し、IAP tunnel経由のSSH接続・`docker compose pull/up`が成功することを確認する(承認後、`Deploy over IAP tunnel`ステップが15m20sで成功。所要時間の内訳はIssue #21で別途調査)
+- [x] 6.4 デプロイ後もn8nの既存ワークフロー(vaultwarden死活監視含む)が正常稼働していることを確認する(Executionsで定期実行が正常であることを確認済み)
 - [x] 6.5 `tailscale_acl`リソースに意図しない変更(diff)が生じていないことを`terraform plan`で確認する(PR #15のterraform-plan.ymlログで確認済み、`tailscale_acl.this`はrefreshのみでdiffなし)
