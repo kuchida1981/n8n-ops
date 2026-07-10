@@ -47,13 +47,13 @@
 
 ## 7. Phase A: 空のn8nでインフラ検証(テストサブドメイン)
 
-- [ ] 7.1 `domain=n8n-test.u-rei.com`で初回`terraform apply`(承認込み)を実行し、インフラ一式を作成する
-- [ ] 7.2 出力された静的External IPを使い、`u-rei.com`のDNS管理画面で`n8n-test.u-rei.com`のAレコードを手動作成する
-- [ ] 7.3 Let's Encrypt証明書が正常に発行され、`https://n8n-test.u-rei.com`でn8nの初期セットアップ画面にアクセスできることを確認する
-- [ ] 7.4 `tailscale ssh`でVMに接続できることを確認する
-- [ ] 7.5 `free -h`/`swapon --show`でswapが有効になっていることを確認する
-- [ ] 7.6 VM再起動を行い、startup-scriptの再実行で二重処理(swapfile重複作成、fstab重複エントリ等)が起きないことを確認する
-- [ ] 7.7 PRを作成し、`terraform plan`がCIで実行されることを確認する(この時点ではmainにマージしない、または軽微な変更で一度CI/CDサイクル全体を検証する)
+- [x] 7.1 `domain=n8n-test.u-rei.com`で初回`terraform apply`(承認込み)を実行し、インフラ一式を作成する(実施メモ: 初回applyは`tailscale_tailnet_key`が2回失敗した。1回目は`TAILSCALE_TAILNET` Secretの値が誤っており404、2回目は`tailscale_acl`と`tailscale_tailnet_key`の間に依存関係がなく並行実行されたことによる競合(PR #8で`depends_on`を追加して修正)、3回目はvaultwarden-opsと共用していたTailscale OAuthクライアントのAuth Keysスコープが`tag:vaultwarden-server`専用に制限されていたため`tag:n8n-server`のキー発行が拒否された(n8n専用の新規OAuthクライアントを発行して解消)。4回目のapplyで成功)
+- [x] 7.2 出力された静的External IPを使い、`u-rei.com`のDNS管理画面で`n8n-test.u-rei.com`のAレコードを手動作成する
+- [x] 7.3 Let's Encrypt証明書が正常に発行され、`https://n8n-test.u-rei.com`でn8nの初期セットアップ画面にアクセスできることを確認する(`curl -sv`でLet's Encrypt発行の有効な証明書とHTTP/2 200を確認)
+- [x] 7.4 `tailscale ssh`でVMに接続できることを確認する(ACLの`action: check`による追加認証を含めて確認)
+- [x] 7.5 `free -h`/`swapon --show`でswapが有効になっていることを確認する
+- [x] 7.6 VM再起動を行い、startup-scriptの再実行で二重処理(swapfile重複作成、fstab重複エントリ等)が起きないことを確認する(`gcloud compute instances reset`で実施、いずれも重複なしを確認)
+- [x] 7.7 PRを作成し、`terraform plan`がCIで実行されることを確認する(PR #1・PR #8の両方でCI上の`terraform plan`が正常動作することを確認済み)
 
 ## 8. Phase B〜E: 本番データの移行とカットオーバー
 
