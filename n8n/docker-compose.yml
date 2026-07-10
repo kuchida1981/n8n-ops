@@ -37,7 +37,13 @@ services:
     # shell/env interpolation. Upgrading is still just
     # `docker compose pull && docker compose up -d` per n8n's own docs;
     # bumping this tag is now the deliberate step that drives that.
-    image: docker.n8n.io/n8nio/n8n:2.26.4
+    #
+    # Deliberately n8nio/n8n (implicit Docker Hub), not n8n's own
+    # docker.n8n.io mirror - same image, but Dependabot's docker-registry
+    # schema requires `username`/`password` for any non-Docker-Hub
+    # hostname even when the registry allows anonymous pulls, which would
+    # mean carrying a credential that authenticates nothing.
+    image: n8nio/n8n:2.26.4
     restart: always
     ports:
       - "127.0.0.1:5678:5678"
