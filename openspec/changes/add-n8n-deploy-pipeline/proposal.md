@@ -4,7 +4,7 @@ n8nイメージはDependabotによる自動検知・更新PRの仕組みを前�
 
 ## What Changes
 
-- `.github/dependabot.yml`のdocker-composeエコシステムに`registries:`設定を追加し、`docker.n8n.io`を明示的に登録してn8nのバージョン更新をDependabotに検知させる
+- `n8n/docker-compose.yml`のn8nイメージ参照を`docker.n8n.io/n8nio/n8n:2.26.4`から`n8nio/n8n:2.26.4`(暗黙のDocker Hub参照、実体は同一イメージ)に書き換え、Dependabotのdocker-composeエコシステムが標準のDocker Hub検知経路でバージョン更新を検知できるようにする(`docker-registry`タイプの`registries:`設定は`username`/`password`必須のためこのケースには適さないと判明したため不採用)
 - `.github/workflows/n8n-deploy.yml`を新設。`main`ブランチの`n8n/**`変更をトリガーに、既存の`production` GitHub Environment(terraform-apply.ymlと共有)の承認を経て、CIランナーがGCP IAP tunnel経由でVMに接続し`git pull && docker compose pull && docker compose up -d`を実行する
 - Terraform CI用サービスアカウント(bootstrap管理)に`roles/iap.tunnelResourceAccessor`と`roles/compute.osAdminLogin`を追加付与する
 - VM実行時サービスアカウント側の変更は無し。Tailscale ACL(tailscale.tf)には一切変更を加えない
@@ -21,6 +21,6 @@ n8nイメージはDependabotによる自動検知・更新PRの仕組みを前�
 
 ## Impact
 
-- 変更対象ファイル: `.github/dependabot.yml`, `.github/workflows/n8n-deploy.yml`(新規), `terraform/bootstrap/main.tf`(CI用SAのIAM追加)
+- 変更対象ファイル: `n8n/docker-compose.yml`(イメージ参照), `.github/dependabot.yml`, `.github/workflows/n8n-deploy.yml`(新規), `terraform/bootstrap/main.tf`(CI用SAのIAM追加)
 - 影響範囲: n8n-opsリポジトリ内で完結。vaultwarden-ops・Tailscale ACL・VM実行時サービスアカウントへの変更なし
 - 運用への影響: Dependabotが作成するn8nバージョンPRをマージした後、`n8n-deploy.yml`のGitHub Environment承認を行うことで初めて本番へ反映される(マージだけでは反映されない)

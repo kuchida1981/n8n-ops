@@ -20,11 +20,11 @@
 
 ## Decisions
 
-### 1. dependabot.ymlにdocker.n8n.io用のregistries設定を追加する
+### 1. n8nイメージ参照をDocker Hub直参照(`n8nio/n8n`)に書き換える
 
-`docker.n8n.io`は実体としてDocker Hubの`n8nio/n8n`をそのまま配信するパブリックミラーで、認証チャレンジも`auth.docker.io`(Docker Hub本体)を指す(`curl`で確認済み: `WWW-Authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`)。よって認証情報は不要で、`type: docker-registry`と`url: https://docker.n8n.io`のみを登録すれば匿名トークンフローでタグ一覧を取得できる想定。
+当初は`docker.n8n.io`用の`registries:`エントリを`dependabot.yml`に追加する案(`type: docker-registry`, `url: https://docker.n8n.io`)を採用したが、実装後にGitHub公式ドキュメント([Configuration options for the dependabot.yml file](https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot-yml-file))で、`docker-registry`タイプは**`username`と`password`が必須パラメータ**であることが判明した。`docker.n8n.io`は匿名pullが可能なレジストリ(実体はDocker Hubの`n8nio/n8n`そのもの、認証チャレンジも`auth.docker.io`を指す)だが、Dependabotの設定スキーマはレジストリの実際の認証要否に関わらず一律でこの2フィールドを要求するため、`url`のみの設定は`did not match one or more of the required schemas`エラーで拒否された。
 
-代替案として「イメージ参照を`n8nio/n8n`(Docker Hub暗黙参照)に書き換える」ことも検討したが、`docker.n8n.io`はn8n公式ドキュメントが推奨する参照方法であり、実体が同じでも参照方法を変える理由がないため採用しない。
+ダミーの`username`/`password`をGitHub Secretsとして登録する回避策も検討したが、実際に機能するか不確実な上、「何も認証しないダミー認証情報」を保持し続けること自体が将来の読み手を混乱させる。`docker.n8n.io/n8nio/n8n:2.26.4`と`n8nio/n8n:2.26.4`は同一のDocker Hubリポジトリを指す完全に同じイメージであるため、イメージ参照自体を暗黙のDocker Hub参照に書き換えることで、`registries:`ブロックそのものが不要になり、traefik(既に暗黙のDocker Hub参照)と同じ扱いに揃う。挙動・イメージの中身に変化はない。
 
 ### 2. 新しいGitHub Environmentは作らず`production`を流用する
 

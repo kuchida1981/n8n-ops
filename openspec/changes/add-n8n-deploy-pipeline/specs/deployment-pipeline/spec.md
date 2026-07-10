@@ -1,15 +1,15 @@
 ## MODIFIED Requirements
 
 ### Requirement: n8nイメージバージョンのDependabot管理
-システムは、docker-compose.yml内のn8nイメージ参照をリテラルタグ(変数展開を用いない形)で記述しなければならない(SHALL)。これにより、Dependabotのdocker-composeエコシステムが新バージョンを検知し、自動的に更新プルリクエストを作成できる状態を維持しなければならない(SHALL)。n8nイメージが`docker.n8n.io`のようなDocker Hub以外のレジストリホスト名を参照する場合、Dependabotがそのホスト名を検知できるよう、`.github/dependabot.yml`の`registries:`にそのホスト名を明示的に登録しなければならない(SHALL)。登録を怠った場合、Dependabotはエラーを出さずそのイメージの追跡を静かにスキップするため、この登録漏れは動作確認によって検出されなければならない(SHALL)。
+システムは、docker-compose.yml内のn8nイメージ参照をリテラルタグ(変数展開を用いない形)で記述しなければならない(SHALL)。これにより、Dependabotのdocker-composeエコシステムが新バージョンを検知し、自動的に更新プルリクエストを作成できる状態を維持しなければならない(SHALL)。n8nイメージ参照は、Dependabotが認証情報なしで検知できる暗黙のDocker Hub参照(レジストリホスト名を含まない形)でなければならない(SHALL)。Dependabotの`docker-registry`タイプの`registries:`設定は`username`/`password`が必須パラメータであり、認証不要な公開レジストリであってもこの要件を満たさない設定はスキーマエラーとなるため、独自レジストリホスト名(例: `docker.n8n.io`)を参照する構成は採用してはならない(SHALL NOT)。
 
 #### Scenario: Dependabotが新バージョンのPRを作成する
 - **WHEN** n8nの新しいイメージバージョンがリリースされる
 - **THEN** Dependabotがdocker-compose.yml内のタグ更新を提案するプルリクエストを自動作成する
 
-#### Scenario: 独自レジストリホスト名がdependabot.ymlに登録されている
-- **WHEN** `.github/dependabot.yml`のdocker-composeエコシステム設定を確認する
-- **THEN** n8nイメージが参照するレジストリホスト名(`docker.n8n.io`)が`registries:`に明示的に登録されている
+#### Scenario: イメージ参照が暗黙のDocker Hub参照である
+- **WHEN** `n8n/docker-compose.yml`のn8nサービスのimage定義を確認する
+- **THEN** レジストリホスト名を含まない`n8nio/n8n:<タグ>`形式であり、`.github/dependabot.yml`に`registries:`設定は存在しない
 
 ## ADDED Requirements
 
