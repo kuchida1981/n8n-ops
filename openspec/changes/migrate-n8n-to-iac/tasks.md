@@ -24,7 +24,7 @@
 ## 4. Terraform: Tailscale接続 (`tailscale-connectivity`)
 
 - [x] 4.1 `tailscale`プロバイダを設定(vaultwarden-opsと同じtailnetを操作するため、Terraform stateは別リポジトリ・別stateのまま)
-- [ ] 4.2 apply前に、Tailscale管理画面(https://login.tailscale.com/admin/acl/file )で現行ACLポリシーの内容(vaultwarden-opsが管理する`tag:vaultwarden-server`関連の設定)を取得する(実apply直前に行う運用上のチェックのため未実施。`terraform/main/tailscale.tf`はこのセッションで読んだvaultwarden-ops側`tailscale.tf`の内容を反映済みだが、apply前に管理画面の最新状態との差分がないか必ず再確認すること)
+- [x] 4.2 apply前に、Tailscale管理画面(https://login.tailscale.com/admin/acl/file )で現行ACLポリシーの内容(vaultwarden-opsが管理する`tag:vaultwarden-server`関連の設定)を取得する(実施メモ: 管理画面のブラウズではなく、vaultwarden-opsリポジトリの`terraform/main/tailscale.tf`を直接読み、`terraform plan`の出力で意図通りの合成結果になっていることを確認する形で代替した。実apply後、両タグとも正しくtailnetに反映されていることも確認済み。このパターンの持続的な課題(2リポジトリでのACL二重管理)はissue #12として記録し、今回は見送り)
 - [x] 4.3 `tailscale_acl`リソースを、4.2で取得した既存内容に`tag:n8n-server`のtagOwners・sshルールを追加合成した完全なポリシーとして定義する(vaultwarden-opsの`terraform/main/tailscale.tf`を参照し、既存のtagOwners/acls/sshブロックを漏れなく含める)
 - [x] 4.4 `tailscale_tailnet_key`でタグ付き認証キーを発行し、Secret Managerのシークレットバージョンとして書き込む
 - [x] 4.5 VMのstartup-scriptにSecret Managerから認証キーを取得し`tailscale up --ssh --hostname=n8n --advertise-tags=tag:n8n-server`を無人実行する処理を追加(冪等: 既にtailnetに参加済みならスキップ)
@@ -67,7 +67,7 @@
 - [x] 8.8 `n8n.u-rei.com`向けの新しいTLS証明書が発行されるまで待ち、`https://n8n.u-rei.com`にアクセスできることを確認する(実施メモ: Traefikが直近の失敗(DNS未伝播時のACME検証失敗)をキャッシュしており自動再試行しなかったため、Traefikコンテナを再起動して再取得させる必要があった)
 - [x] 8.9 DNSの`n8n.u-rei.com`Aレコードを新VMの静的IPへ切り替える(TTLに応じた浸透待ちを考慮する)
 - [x] 8.10 vaultwardenの`/alive`監視ワークフローが正常にDiscord通知を送れることを実際に確認する(カットオーバー後の本番ドメインでも再確認済み)
-- [ ] 8.11 問題がないことを確認した上で、旧VM(`n8n-debian`)とそのディスクを削除する
+- [x] 8.11 問題がないことを確認した上で、旧VM(`n8n-debian`)とそのディスクを削除する(`gcloud compute instances delete n8n-debian --zone us-west1-b`で削除。ブートディスクは`autoDelete`設定によりVM削除と同時に自動削除された)
 
 ## 9. ドキュメント
 
