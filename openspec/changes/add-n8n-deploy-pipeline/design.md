@@ -50,7 +50,7 @@ Tailscale ACLは既に`tailscale_acl`という単一リソースがn8n-ops/vault
 
 - [IAP tunnel確立の失敗(ネットワーク一時障害等)] → ワークフローはジョブ失敗として明示的にActions上に残り、再実行(re-run)で対応可能。無人リトライは行わない(承認を経た明示的操作という設計方針と整合)
 - [`git pull --ff-only`がfast-forwardできない状態(VM上のローカルチェックアウトが何らかの理由で乱れた場合)] → 失敗時はコマンド全体が非ゼロ終了し、ジョブが失敗として可視化される。startup-scriptと異なり`|| echo WARNING`でのフォールバックは行わない(デプロイ処理は「反映されたかどうか」が明確であるべきで、黙って失敗を握りつぶすべきではないため)
-- [OS Login有効化によるVMへのSSH経路の意図しない拡大] → `roles/compute.osLogin`はCI用SAにのみ付与し、他のIAM primitiveには付与しない。ファイアウォールもIAPの専用レンジのみに限定するため、実質的にIAP経由・CI用SAの認証情報を持つ主体のみがSSH可能
+- [OS Login有効化によるVMへのSSH経路の意図しない拡大] → `roles/compute.osAdminLogin`はCI用SAにのみ付与し、他のIAM primitiveには付与しない。ファイアウォールもIAPの専用レンジのみに限定するため、実質的にIAP経由・CI用SAの認証情報を持つ主体のみがSSH可能
 
 ## Migration Plan
 

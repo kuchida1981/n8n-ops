@@ -48,7 +48,7 @@ resource "google_compute_instance" "n8n" {
       ts_secret_id     = google_secret_manager_secret.tailscale_authkey.secret_id
     })
 
-    # Lets the terraform-ci-n8n service account (granted roles/compute.osLogin
+    # Lets the terraform-ci-n8n service account (granted roles/compute.osAdminLogin
     # in bootstrap) SSH in via IAP tunnel using short-lived, IAM-issued keys -
     # used by n8n-deploy.yml to run `docker compose pull && up -d` after a
     # version bump. Project-wide OS Login defaults to disabled, so this must
