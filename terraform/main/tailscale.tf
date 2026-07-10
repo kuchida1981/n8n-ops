@@ -7,12 +7,22 @@
 # The key only ever tags a device as tag:n8n-server, and is only readable
 # by that VM's own runtime service account, so the exposure from reuse is
 # minimal.
+#
+# Explicit depends_on: without it, Terraform has no reason to think this
+# resource relates to tailscale_acl.this (neither references the other's
+# attributes) and creates both in parallel. The Tailscale API rejects a key
+# request for tag:n8n-server with a 400 ("tags ... invalid or not
+# permitted") if that tag isn't registered in the tailnet's ACL tagOwners
+# yet - observed in practice on a fresh apply where the key request raced
+# ahead of the ACL write completing.
 resource "tailscale_tailnet_key" "vm" {
   reusable      = true
   ephemeral     = false
   preauthorized = true
   tags          = ["tag:n8n-server"]
   expiry        = 7776000 # 90 days; rotate by re-applying before this lapses
+
+  depends_on = [tailscale_acl.this]
 }
 
 # WARNING: `tailscale_acl` manages the tailnet's *entire* ACL policy file as
