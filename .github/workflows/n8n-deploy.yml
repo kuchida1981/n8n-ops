@@ -1,0 +1,41 @@
+name: n8n Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "n8n/**"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Same "production" Environment terraform-apply.yml uses - a merged
+    # version bump only reaches the VM once a human approves this run here.
+    # Requires the required-reviewers rule already configured for that
+    # Environment in repo Settings.
+    environment: production
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy over IAP tunnel
+        run: |
+          gcloud compute ssh n8n \
+            --project="${{ secrets.GCP_PROJECT_ID }}" \
+            --zone=us-west1-b \
+            --tunnel-through-iap \
+            --quiet \
+            --command='sudo bash -c "cd /opt/n8n/app && git pull --ff-only && cd n8n && docker compose --env-file /opt/n8n/.env pull && docker compose --env-file /opt/n8n/.env up -d"'
+          # No `|| echo WARNING` fallback here (unlike the startup-script's
+          # boot-time git pull): a deploy run's whole point is a legible
+          # pass/fail signal in the Actions UI, so a pull failure must fail
+          # the job rather than being silently swallowed.

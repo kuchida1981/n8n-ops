@@ -38,8 +38,8 @@ Tailscale ACLは既に`tailscale_acl`という単一リソースがn8n-ops/vault
 
 ### 4. IAP tunnel用に、CI用SAへのIAM追加とVM側の設定変更が必要
 
-- **IAM**: `terraform/bootstrap/main.tf`の`terraform_ci_roles`に`roles/iap.tunnelResourceAccessor`と`roles/compute.osLogin`を追加する。bootstrapはユーザーが手動で一度だけapplyする運用のため、この変更もユーザー自身による手動apply(READMEに手順追記)とする。
-- **OS Login有効化**: 現在VMのmetadataに`enable-oslogin`が設定されておらず(プロジェクトデフォルトはOS Login無効)、`roles/compute.osLogin`を付与してもVM側がOS Loginを受け付けなければSSHは成立しない。`terraform/main/compute.tf`のVM metadataに`enable-oslogin = "TRUE"`を追加する。
+- **IAM**: `terraform/bootstrap/main.tf`の`terraform_ci_roles`に`roles/iap.tunnelResourceAccessor`と`roles/compute.osAdminLogin`を追加する。bootstrapはユーザーが手動で一度だけapplyする運用のため、この変更もユーザー自身による手動apply(READMEに手順追記)とする。`osAdminLogin`(`osLogin`ではなく)を選んだのは、デプロイ対象の`/opt/n8n/app`・`/opt/n8n/.env`(mode 600)・dockerソケットがすべてroot所有であり、デプロイコマンドの実行にsudo権限が必須なため。
+- **OS Login有効化**: 現在VMのmetadataに`enable-oslogin`が設定されておらず(プロジェクトデフォルトはOS Login無効)、IAM側の権限を付与してもVM側がOS Loginを受け付けなければSSHは成立しない。`terraform/main/compute.tf`のVM metadataに`enable-oslogin = "TRUE"`を追加する。
 - **ファイアウォール**: 現在tcp:22への専用ingressルールは存在せず、`tailscale ssh`はTailscaleのWireGuardトンネル経由でGCPのVPCファイアウォールを経由しないため成立している。一方IAP tunnelはGoogleのIAPインフラを経由して実際にVPC内へtcp:22のパケットを転送するため、IAP専用のソースレンジ`35.235.240.0/20`からのtcp:22を許可する専用ファイアウォールルールを`target_tags = ["n8n-server"]`で新設する。プロジェクトに残る広域な`default-allow-ssh`レガシールールに依存しない設計とする(そのルールは将来是正される可能性がある既知の課題のため)。
 
 ### 5. デプロイ内容はVM再起動を伴わない`compose pull/up`のみ

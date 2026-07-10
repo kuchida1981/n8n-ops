@@ -7,6 +7,7 @@
 - n8nの`/alive`監視ワークフローがvaultwardenの死活監視を担っており、n8n自身のデータ移行はこのワークフローの継続性に直結する
 - データ永続化: 専用Persistent Disk上にDockerの`data-root`ごと配置し、named volume(`n8n_data`/`traefik_data`)をVMのライフサイクルから独立させる
 - n8nイメージはリテラルタグで固定し、Dependabotが新バージョンを検知して更新PRを作成する
+- バージョン更新の本番反映は`n8n-deploy.yml`(GitHub Environment承認ゲート付き)経由でのみ行われ、PRマージだけでは自動反映されない(詳細は「n8nのバージョン更新」参照)
 
 ## アーキテクチャ
 
@@ -71,6 +72,8 @@ terraform output
 # terraform_ci_service_account_email
 ```
 
+**既存環境をアップデートする場合**: `terraform/bootstrap`はGitHub Actionsではなく手動apply専用のため、CI用サービスアカウントのIAM権限(例: `n8n-deploy.yml`用に追加した`roles/iap.tunnelResourceAccessor`・`roles/compute.osAdminLogin`)が変更されたときは、同じ`terraform apply`コマンドを再実行して反映させる必要がある。差分のみが適用され、既存リソースは壊れない。
+
 ### 2. Tailscale OAuthクライアントの発行(手動、またはvaultwarden-opsのものを再利用)
 
 vaultwarden-opsで既にTerraformプロバイダ用のOAuthクライアント(Policy File + Auth Keysスコープ)を発行済みなら、それをそのまま再利用できる。新規発行が必要な場合は、vaultwarden-opsのREADME「2. Tailscale OAuthクライアントの発行」の手順に倣い、Auth Keysのタグには`tag:n8n-server`を追加で選択する。
@@ -122,6 +125,15 @@ Phase Aの検証が済んでから着手する。ダウンタイムは許容す�
 7. vaultwardenの`/alive`監視ワークフローが正常にDiscord通知を送れることを確認する
 8. 問題がなければ旧VM(`n8n-debian`)とそのディスクを削除する
 
+## n8nのバージョン更新
+
+n8nイメージは`n8n/docker-compose.yml`でリテラルタグ固定しており、更新は以下の2段階の承認を経て反映される。即時反映は意図しておらず、月1回程度の更新頻度を想定している。
+
+1. **バージョンを受け入れる**: Dependabotがn8nの新バージョンを検知すると、`n8n/docker-compose.yml`のタグ更新を提案するPRを自動作成する(`docker.n8n.io`レジストリは`.github/dependabot.yml`の`registries:`に明示登録済み)。PRをレビューし、`main`へマージする
+2. **今このタイミングで反映する**: マージをトリガーに`n8n-deploy.yml`が起動し、`production` Environmentの承認待ちで一時停止する。承認すると、CIランナーがGCP IAP tunnel経由でVMへSSHし、`git pull && docker compose pull && docker compose up -d`を実行する。VM自体の再起動は行わないため、Traefikの証明書(`acme.json`)には影響しない
+
+反映後は、対象のn8nバージョンで実際にワークフローが動作していること(vaultwardenの`/alive`監視ワークフロー含む)を確認する。
+
 ## ロードマップ(本リポジトリの現時点のスコープ外)
 
 - NASへの自動バックアップ(vaultwarden-opsの`add-nas-backup`パターンをn8n向けに展開する、次の別change)
@@ -134,5 +146,5 @@ Phase Aの検証が済んでから着手する。ダウンタイムは許容す�
 terraform/bootstrap/  … 手動・1回だけapply。GCS state bucket, WIF Pool, CI用SA
 terraform/main/       … GitHub Actionsが継続的にapply。VM/FW/Disk/Secret Manager/Tailscale ACL
 n8n/                   … docker-compose.yml(Traefik + n8n)
-.github/workflows/     … terraform plan(PR) / apply(main, 承認ゲート付き)
+.github/workflows/     … terraform plan(PR) / apply(main, 承認ゲート付き) / n8n-deploy(n8n/配下の変更、承認ゲート付き)
 ```

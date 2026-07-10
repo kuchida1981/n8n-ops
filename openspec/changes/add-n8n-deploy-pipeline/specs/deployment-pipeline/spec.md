@@ -29,7 +29,7 @@
 - **THEN** VMインスタンス自体のreboot/resetは発生せず、Traefikの証明書データ(`acme.json`)を保持したコンテナ再作成のみが行われる
 
 ### Requirement: CI用サービスアカウントによるIAP tunnel経由のVMアクセス
-システムは、Terraform CI用サービスアカウントに対し、GCP Identity-Aware Proxy(IAP) tunnel経由でVMへSSH接続するために必要な最小限のIAM権限(`roles/iap.tunnelResourceAccessor`・`roles/compute.osLogin`)のみを付与しなければならない(SHALL)。この権限はTailscale ACLやVM実行時サービスアカウントには一切影響してはならない(SHALL NOT)。
+システムは、Terraform CI用サービスアカウントに対し、GCP Identity-Aware Proxy(IAP) tunnel経由でVMへSSH接続するために必要な最小限のIAM権限(`roles/iap.tunnelResourceAccessor`・`roles/compute.osAdminLogin`)のみを付与しなければならない(SHALL)。この権限はTailscale ACLやVM実行時サービスアカウントには一切影響してはならない(SHALL NOT)。
 
 #### Scenario: CI用SAがIAP tunnel経由でSSHできる
 - **WHEN** GitHub ActionsのワークフローがWIF経由でCI用SAとして認証し、IAP tunnel経由でVMへSSHを試みる
