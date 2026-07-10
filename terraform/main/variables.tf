@@ -18,11 +18,10 @@ variable "zone" {
 variable "domain" {
   description = "Public FQDN n8n is served on. Split into SUBDOMAIN/DOMAIN_NAME by the startup-script to match the existing docker-compose.yml env vars."
   type        = string
-  # Starts pointed at the blue/green validation subdomain; change this
-  # default (via a plain PR) to "n8n.u-rei.com" once Phase A validation
-  # passes and it's time to cut over - see migrate-n8n-to-iac's tasks.md
-  # section 8.
-  default = "n8n-test.u-rei.com"
+  # Phase A (n8n-test.u-rei.com) validation and the Phase B data migration
+  # both passed - see migrate-n8n-to-iac's tasks.md section 8 - so this now
+  # points at the real production domain.
+  default = "n8n.u-rei.com"
 }
 
 variable "ssl_email" {
