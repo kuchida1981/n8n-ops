@@ -1,5 +1,7 @@
 name: n8n Deploy
 
+run-name: ${{ github.event.head_commit.message }}
+
 on:
   push:
     branches: [main]
@@ -11,7 +13,19 @@ permissions:
   id-token: write
 
 jobs:
+  summary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Show image version diff
+        run: |
+          git diff HEAD^ HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' >> "$GITHUB_STEP_SUMMARY" || true
+
   deploy:
+    needs: summary
     runs-on: ubuntu-latest
     # Same "production" Environment terraform-apply.yml uses - a merged
     # version bump only reaches the VM once a human approves this run here.

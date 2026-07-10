@@ -1,7 +1,8 @@
 ## 1. ワークフロー実装
 
-- [ ] 1.1 `.github/workflows/n8n-deploy.yml`に`run-name: ${{ github.event.head_commit.message }}`を追加する
-- [ ] 1.2 `n8n/docker-compose.yml`の`HEAD^`との差分から`image:`行の変更のみを抽出し、`$GITHUB_STEP_SUMMARY`へ出力するステップを追加する(`grep`が非マッチの場合もジョブを失敗させないこと)
+- [x] 1.1 `.github/workflows/n8n-deploy.yml`に`run-name: ${{ github.event.head_commit.message }}`を追加する
+- [x] 1.2 承認ゲートなしの`summary`ジョブを新設し、`actions/checkout`(`fetch-depth: 2`)を行ったうえで、`n8n/docker-compose.yml`の`HEAD^`との差分から`image:`行の変更のみを抽出して`$GITHUB_STEP_SUMMARY`へ出力する(`grep`が非マッチの場合もジョブを失敗させないこと)
+- [x] 1.3 既存の`deploy`ジョブに`needs: summary`を追加し、`summary`ジョブの完了後にのみ承認待ちへ進む構成にする
 
 ## 2. mainへの反映
 

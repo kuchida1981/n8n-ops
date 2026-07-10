@@ -31,6 +31,17 @@ git diff HEAD^ HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' >> "$GITHUB
 
 `grep`がマッチなし(該当ファイルにimage行の変更がない、例: 環境変数のみの変更)の場合は終了コード1を返すため、`|| true`等でジョブが失敗しないようにする。
 
+### diff出力用に承認ゲートなしの`summary`ジョブを新設する
+GitHub Actionsの環境保護ルール(required reviewers)は、そのジョブの**実行開始そのもの**をブロックする。既存の`deploy`ジョブは`environment: production`を持つため、承認が下りるまでchekoutを含むどのステップも実行されない。つまり、diff出力ステップを`deploy`ジョブの中に追加しても、承認前にSummaryタブへ表示することはできず、issue #20の目的(承認前に差分を確認できる)を満たせない。
+
+これを解決するため、ワークフローを2ジョブ構成に変更する:
+- `summary`ジョブ(environment指定なし): `actions/checkout`(`fetch-depth: 2`で`HEAD^`を取得可能にする)を行い、image diffを`$GITHUB_STEP_SUMMARY`に出力する。ゲートがないため即座に実行される
+- `deploy`ジョブ(`environment: production`、`needs: summary`): 既存のVM反映処理はそのまま。`summary`ジョブの完了を待って承認待ち状態になる
+
+承認者がRunページを開いた時点で`summary`ジョブは完了済みであり、そのSummary出力は承認前から閲覧できる。`run-name`はワークフロー実行全体に対する設定のため、ジョブ分割の影響を受けない。
+
+代替案として、`deploy`ジョブの中でcheckoutとdiff出力を承認前に済ませる方法も検討したが、GitHub Actionsの仕様上ジョブ単位でしか承認ゲートを制御できないため不可能であり、ジョブ分割以外の選択肢はない。
+
 ### 検証はテスト用の変更を作らず、既存のDependabot PR #2を使う
 新規に検証用コミットを作るのではなく、現在オープン中のPR #2(traefik更新)を実装後にマージし、実際の「Review pending deployments」画面で確認する。理由:
 - 実運用のデプロイフローをそのまま検証でき、モックや作り物のシナリオより信頼性が高い
@@ -44,7 +55,7 @@ git diff HEAD^ HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' >> "$GITHUB
 
 ## Migration Plan
 
-1. `.github/workflows/n8n-deploy.yml`に`run-name`とサマリー出力ステップを追加し、mainにマージする(このマージ自体はdeployを起動しない)
+1. `.github/workflows/n8n-deploy.yml`に`run-name`を追加し、`summary`ジョブ(checkout + diff出力)を新設、既存の`deploy`ジョブに`needs: summary`を追加してmainにマージする(このマージ自体はdeployを起動しない)
 2. PR #2(traefik v3.7.5→v3.7.7)をマージする
 3. 起動したワークフロー実行のタイトルとSummaryタブを確認し、意図通りの表示になっているか確認する
 4. 問題なければそのままPR #2の承認・デプロイを進める(通常のtraefikバージョン更新として扱う)
