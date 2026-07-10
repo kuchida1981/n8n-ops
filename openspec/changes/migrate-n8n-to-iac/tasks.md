@@ -31,7 +31,7 @@
 
 ## 5. n8nアプリケーション基盤 (`n8n-service`)
 
-- [x] 5.1 現行の`docker-compose.yml`をリポジトリの`n8n/`ディレクトリへ移し、n8nイメージをリテラルタグ(`2.26.4`、稼働中バージョンをSSHで確認済み)に変更する。それ以外の構造(named volume `n8n_data`/`traefik_data`, Traefikのtlschallenge設定等)は変更しない。`base.yml`は現行docker-compose.ymlの元になった未使用の参考ファイル(実際には`docker compose`から参照されていない)と判断し、移設対象から除外した
+- [x] 5.1 現行の`docker-compose.yml`をリポジトリの`n8n/`ディレクトリへ移し、n8nイメージをリテラルタグ(`2.26.4`、稼働中バージョンをSSHで確認済み)に変更する。それ以外の構造(named volume `n8n_data`/`traefik_data`, Traefikのtlschallenge設定等)は変更しない。`base.yml`は現行docker-compose.ymlの元になった未使用の参考ファイル(実際には`docker compose`から参照されていない)と判断し、移設対象から除外した。PR #1でのGemini Code Assistレビュー指摘を受け、Traefikイメージも同様の理由でリテラルタグ(`v3.7.5`、稼働中バージョンをSSHで確認済み。レビューコメントが提案した`v2.11`は誤りで、実際にはv3系が稼働中だった)に固定した
 - [x] 5.2 startup-scriptにDocker/Docker Composeのインストール処理を追加
 - [x] 5.3 startup-scriptに、専用Persistent Diskをフォーマット・マウントし(未フォーマット/未マウント時のみ、`/etc/fstab`への重複エントリなし)、`/etc/docker/daemon.json`の`data-root`をそのマウントパス配下に向けてDockerを(必要な場合のみ)再起動する処理を追加
 - [x] 5.4 startup-scriptに、swapfileの作成(`dd`+`mkswap`)・有効化(`swapon`)・`/etc/fstab`への永続化を、冪等なガード付きで追加する

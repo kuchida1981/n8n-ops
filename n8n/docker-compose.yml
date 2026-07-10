@@ -2,7 +2,13 @@ version: "3"
 
 services:
   traefik:
-    image: "traefik"
+    # Pinned to a literal tag (not a variable) for the same reason as n8n's
+    # image below - Dependabot's docker-compose ecosystem can then detect
+    # and bump it. Set to the version actually running in production
+    # (confirmed via `docker exec n8n-traefik-1 traefik version` over SSH),
+    # not an assumed/guessed one - traefik v2->v3 is a breaking config
+    # change, so guessing wrong here would be a silent downgrade.
+    image: "traefik:v3.7.5"
     restart: always
     command:
       - "--api=true"
