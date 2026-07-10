@@ -6,7 +6,7 @@
 
 ## 2. mainへの反映
 
-- [ ] 2.1 本変更(`.github/workflows/n8n-deploy.yml`のみの変更)をmainへマージする(`paths: n8n/**`に該当しないため、このマージ自体はn8n-deployを起動しない)
+- [x] 2.1 本変更(`.github/workflows/n8n-deploy.yml`のみの変更)をmainへマージする(`paths: n8n/**`に該当しないため、このマージ自体はn8n-deployを起動しない)
 
 ## 3. 実運用での検証(PR #2を使用)
 
