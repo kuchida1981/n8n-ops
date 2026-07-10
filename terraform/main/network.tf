@@ -32,6 +32,27 @@ resource "google_compute_firewall" "allow_web" {
 # rule below. Removing that legacy rule is out of scope for this change -
 # see the migrate-n8n-to-iac proposal's roadmap notes.
 
+# n8n-deploy.yml reaches the VM via `gcloud compute ssh --tunnel-through-iap`
+# (see add-n8n-deploy-pipeline's design.md), which - unlike `tailscale ssh` -
+# actually forwards a tcp:22 packet into the VPC via IAP, so it needs its own
+# ingress rule. Scoped to IAP's documented source range rather than relying
+# on the legacy `default-allow-ssh` rule above, since that rule is a known
+# issue slated for future removal and this shouldn't silently break if/when
+# it goes away.
+resource "google_compute_firewall" "allow_iap_ssh" {
+  name    = "n8n-allow-iap-ssh"
+  project = var.project_id
+  network = data.google_compute_network.default.self_link
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_ranges = ["35.235.240.0/20"]
+  target_tags   = ["n8n-server"]
+}
+
 resource "google_compute_address" "n8n" {
   name    = "n8n-static-ip"
   project = var.project_id
