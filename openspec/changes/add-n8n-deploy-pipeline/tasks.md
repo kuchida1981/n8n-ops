@@ -1,7 +1,8 @@
 ## 1. Dependabotのn8nバージョン追跡を修正
 
-- [x] 1.1 `.github/dependabot.yml`のdocker-composeエコシステムエントリに`registries:`設定を追加し、`docker.n8n.io`(type: docker-registry, url: https://docker.n8n.io)を登録する
-- [ ] 1.2 変更をPRとして作成・マージする
+- [x] 1.1 ~~`.github/dependabot.yml`のdocker-composeエコシステムエントリに`registries:`設定を追加し、`docker.n8n.io`(type: docker-registry, url: https://docker.n8n.io)を登録する~~ → PR #15マージ後、Dependabotが実際にconfigをパースした際`docker-registry`タイプは`username`/`password`必須と判明しエラー(スキーマ上、匿名pull可能なレジストリでも例外なし)。方針変更: `n8n/docker-compose.yml`のn8nイメージ参照を`docker.n8n.io/n8nio/n8n:2.26.4`→`n8nio/n8n:2.26.4`(暗黙のDocker Hub参照、実体は同一イメージ)に書き換え、`registries:`ブロックごと削除
+- [x] 1.2 変更をPRとして作成・マージする(PR #15。方針変更分は別PRで対応)
+- [x] 1.3 `n8n/docker-compose.yml`のn8nイメージ参照を`n8nio/n8n:2.26.4`に書き換え、`.github/dependabot.yml`から`registries:`ブロックを削除するPRを作成・マージする(PR #17)
 
 ## 2. CI用サービスアカウントへのIAM追加(bootstrap、手動apply)
 

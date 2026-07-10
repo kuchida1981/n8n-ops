@@ -1,21 +1,12 @@
 version: 2
-
-# n8n's docker-compose.yml references docker.n8n.io (n8n's own Docker Hub
-# mirror - same auth.docker.io token flow, no credentials needed for
-# anonymous pull). Without registering it here, Dependabot silently skips
-# any image on a non-Docker-Hub hostname instead of erroring, which is why
-# n8n's version bumps were never proposed even though traefik's (a plain
-# Docker Hub reference) were.
-registries:
-  n8n-docker:
-    type: docker-registry
-    url: https://docker.n8n.io
-
 updates:
+  # n8n/docker-compose.yml's n8n image is deliberately n8nio/n8n (implicit
+  # Docker Hub), not n8n's own docker.n8n.io mirror - see the comment on
+  # that image line. A custom registries: entry was tried first, but
+  # Dependabot's docker-registry schema requires username/password even
+  # for anonymous-pull registries, which docker.n8n.io doesn't need.
   - package-ecosystem: "docker-compose"
     directory: "/n8n"
-    registries:
-      - n8n-docker
     schedule:
       interval: "weekly"
 
