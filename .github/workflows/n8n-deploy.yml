@@ -22,7 +22,15 @@ jobs:
 
       - name: Show image version diff
         run: |
-          git diff HEAD^ HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' >> "$GITHUB_STEP_SUMMARY" || true
+          diff_output=$(git diff HEAD^ HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' || true)
+          if [ -n "$diff_output" ]; then
+            {
+              echo "### Image Changes"
+              echo '```diff'
+              echo "$diff_output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   deploy:
     needs: summary

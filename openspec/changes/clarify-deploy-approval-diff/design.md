@@ -25,11 +25,19 @@
 
 ### ジョブサマリーへの`image:`行diff出力は特定イメージ名に依存しない
 ```bash
-git diff HEAD^ HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' >> "$GITHUB_STEP_SUMMARY"
+diff_output=$(git diff HEAD^ HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' || true)
+if [ -n "$diff_output" ]; then
+  {
+    echo "### Image Changes"
+    echo '```diff'
+    echo "$diff_output"
+    echo '```'
+  } >> "$GITHUB_STEP_SUMMARY"
+fi
 ```
 `image:`という行パターンにのみ依存し、n8n/traefikを名指しで区別するロジックは持たない。これにより、対象がn8nでもtraefikでも、あるいは将来別サービスが追加されても実装変更なしで機能する。
 
-`grep`がマッチなし(該当ファイルにimage行の変更がない、例: 環境変数のみの変更)の場合は終了コード1を返すため、`|| true`等でジョブが失敗しないようにする。
+`grep`がマッチなし(該当ファイルにimage行の変更がない、例: 環境変数のみの変更)の場合は終了コード1を返すため、`|| true`で吸収する。また、diffの出力をそのまま`$GITHUB_STEP_SUMMARY`に追記すると、行頭の`-`/`+`がMarkdownの箇条書きマーカーとして解釈され、追加/削除の判別やdiffの色分けができなくなる(PR #24へのGemini Code Assistレビューで指摘)。これを避けるため、` ```diff `コードブロックで囲んで出力し、diffが空の場合は何も出力しない(空のヘッダーやコードブロックが残らないようにする)。
 
 ### diff出力用に承認ゲートなしの`summary`ジョブを新設する
 GitHub Actionsの環境保護ルール(required reviewers)は、そのジョブの**実行開始そのもの**をブロックする。既存の`deploy`ジョブは`environment: production`を持つため、承認が下りるまでchekoutを含むどのステップも実行されない。つまり、diff出力ステップを`deploy`ジョブの中に追加しても、承認前にSummaryタブへ表示することはできず、issue #20の目的(承認前に差分を確認できる)を満たせない。
