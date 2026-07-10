@@ -57,16 +57,16 @@
 
 ## 8. Phase B〜E: 本番データの移行とカットオーバー
 
-- [ ] 8.1 旧VM(`n8n-debian`)で`docker compose down`を実行し、n8nを停止する
-- [ ] 8.2 旧VMの`n8n_data`ボリューム配下全体(`config`, `database.sqlite`, `binaryData/`, `nodes/`, `ssh/`, `storage/`等)をtailscale経由のrsync/scpで新VMへコピーする
-- [ ] 8.3 新VM側でコピーしたデータを正しいDocker data-root配下のnamed volumeパスに配置し、パーミッション(コンテナ実行ユーザーとの一致)を確認する
-- [ ] 8.4 新VM上で`docker compose down && docker compose up -d`を実行し、コピーしたデータでn8nが起動することを確認する(この時点ではまだ`n8n-test.u-rei.com`のまま)
-- [ ] 8.5 n8nエディタにアクセスし、既存ワークフロー一覧・credentials一覧が正しく表示されることを確認する(encryptionKeyが正しく引き継がれている証拠)
-- [ ] 8.6 Cron/Interval/Pollトリガーを持つワークフロー(vaultwardenの`/alive`監視を含む)が意図せず二重実行されないよう、必要であれば旧VMを完全に停止済みであることを再確認する
-- [ ] 8.7 Terraform変数`domain`を`n8n.u-rei.com`に変更してapplyする(またはVM上で`.env`の`SUBDOMAIN`を直接書き換えて`docker compose up -d`を再実行する)
-- [ ] 8.8 `n8n.u-rei.com`向けの新しいTLS証明書が発行されるまで待ち、`https://n8n.u-rei.com`にアクセスできることを確認する
-- [ ] 8.9 DNSの`n8n.u-rei.com`Aレコードを新VMの静的IPへ切り替える(TTLに応じた浸透待ちを考慮する)
-- [ ] 8.10 vaultwardenの`/alive`監視ワークフローが正常にDiscord通知を送れることを実際に確認する
+- [x] 8.1 旧VM(`n8n-debian`)で`docker compose down`を実行し、n8nを停止する
+- [x] 8.2 旧VMの`n8n_data`ボリューム配下全体(`config`, `database.sqlite`, `binaryData/`, `nodes/`, `ssh/`, `storage/`等)をtailscale経由のrsync/scpで新VMへコピーする(実施メモ: VM間の直接rsyncではなく、両VMともgcloud IAPトンネル経由でこのセッションから到達可能だったため、`tar czf | ssh ... | tar xzf`のパイプでこのセッション自身を中継点として転送した)
+- [x] 8.3 新VM側でコピーしたデータを正しいDocker data-root配下のnamed volumeパスに配置し、パーミッション(コンテナ実行ユーザーとの一致)を確認する(`stat -c '%u:%g'`で数値UID/GIDが旧VM側と一致(1000:1000)することを確認。`ls -la`上の表示ユーザー名が旧VMと異なって見えたのは、新VM側のOS Loginユーザーが偶然同じuid 1000を持っていたための表示上の見た目の違いで、実害はなかった)
+- [x] 8.4 新VM上で`docker compose down && docker compose up -d`を実行し、コピーしたデータでn8nが起動することを確認する(この時点ではまだ`n8n-test.u-rei.com`のまま)
+- [x] 8.5 n8nエディタにアクセスし、既存ワークフロー一覧・credentials一覧が正しく表示されることを確認する(encryptionKeyが正しく引き継がれている証拠)(全ワークフローが正常にActivateされ、vaultwardenの死活監視ワークフローを手動実行してDiscord通知が届くことも確認した)
+- [x] 8.6 Cron/Interval/Pollトリガーを持つワークフロー(vaultwardenの`/alive`監視を含む)が意図せず二重実行されないよう、必要であれば旧VMを完全に停止済みであることを再確認する(旧VM停止→新VM起動の順で実行したため、重複稼働期間は発生しなかった)
+- [x] 8.7 Terraform変数`domain`を`n8n.u-rei.com`に変更してapplyする(またはVM上で`.env`の`SUBDOMAIN`を直接書き換えて`docker compose up -d`を再実行する)(両方実施: Terraform変数を変更・apply後、VM上の`.env`も直接書き換えてcompose再起動した)
+- [x] 8.8 `n8n.u-rei.com`向けの新しいTLS証明書が発行されるまで待ち、`https://n8n.u-rei.com`にアクセスできることを確認する(実施メモ: Traefikが直近の失敗(DNS未伝播時のACME検証失敗)をキャッシュしており自動再試行しなかったため、Traefikコンテナを再起動して再取得させる必要があった)
+- [x] 8.9 DNSの`n8n.u-rei.com`Aレコードを新VMの静的IPへ切り替える(TTLに応じた浸透待ちを考慮する)
+- [x] 8.10 vaultwardenの`/alive`監視ワークフローが正常にDiscord通知を送れることを実際に確認する(カットオーバー後の本番ドメインでも再確認済み)
 - [ ] 8.11 問題がないことを確認した上で、旧VM(`n8n-debian`)とそのディスクを削除する
 
 ## 9. ドキュメント
