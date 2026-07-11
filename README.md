@@ -11,25 +11,29 @@
 
 ## アーキテクチャ
 
-```
-                         インターネット (誰でも)
-                                │ 443のみ(80はTLS用リダイレクト)
-                                ▼
-                    ┌───────────────────────────┐
-                    │  GCE VM (e2-micro)          │
-                    │  us-west1-b, Debian 13      │
-                    │  ┌───────────────────────┐  │
-                    │  │ Traefik (TLS-ALPN-01)   │  │
-                    │  │  → n8n:5678             │  │
-                    │  └───────────────────────┘  │
-                    │  Dockerのdata-root:          │
-                    │   専用Persistent Disk         │
-                    │   (VMと独立ライフサイクル)      │
-                    └───────────────┬───────────────┘
-                                    │ Tailscale (WireGuard)
-                                    ▼
-                         SSHはtailscale sshのみ
-                (ただしプロジェクト全体のlegacyルールは未是正)
+```mermaid
+flowchart TB
+    internet["インターネット (誰でも)"]
+    admin["管理者"]
+
+    subgraph vm["GCE VM (e2-micro) — us-west1-b, Debian 13"]
+        traefik["Traefik (TLS-ALPN-01)"]
+        n8n["n8n:5678"]
+        disk[("専用Persistent Disk
+        Dockerのdata-root
+        (VMと独立ライフサイクル)")]
+
+        traefik --> n8n
+        n8n -.データ永続化.-> disk
+    end
+
+    internet -- "443のみ
+    (80はTLS用リダイレクト)" --> traefik
+    admin -- "Tailscale (WireGuard)
+    tailscale sshのみ" --> vm
+
+    note["※プロジェクト全体のlegacy `default-allow-ssh`ルールは未是正"]
+    vm -.-> note
 ```
 
 Terraformは`terraform/bootstrap`(1回だけ手動apply)と`terraform/main`(GitHub Actionsが継続的にapply)の2段構成。
