@@ -1,63 +1,65 @@
 # n8n-ops
 
-自分用のn8n(ワークフロー自動化)を、GCP Compute Engine(us-west1)上でセルフホスティングするためのインフラ一式。TerraformでGCPリソースを、GitHub ActionsでCI/CDを、Tailscaleで管理系アクセスを保護する。姉妹プロジェクト[vaultwarden-ops](https://github.com/kuchida1981/vaultwarden-ops)と同じ構成パターンを踏襲している。
+[日本語](README.ja.md)
 
-- 公開URL: `https://n8n.u-rei.com`
-- SSHは`tailscale ssh`経由のみを正規経路とする(ただしGCPプロジェクトに残る legacy な`default-allow-ssh`ルールの是正は本リポジトリのスコープ外。ロードマップ参照)
-- n8nの`/alive`監視ワークフローがvaultwardenの死活監視を担っており、n8n自身のデータ移行はこのワークフローの継続性に直結する
-- データ永続化: 専用Persistent Disk上にDockerの`data-root`ごと配置し、named volume(`n8n_data`/`traefik_data`)をVMのライフサイクルから独立させる
-- n8nイメージはリテラルタグで固定し、Dependabotが新バージョンを検知して更新PRを作成する
-- バージョン更新の本番反映は`n8n-deploy.yml`(GitHub Environment承認ゲート付き)経由でのみ行われ、PRマージだけでは自動反映されない(詳細は「n8nのバージョン更新」参照)
+Infrastructure for self-hosting a personal instance of n8n (workflow automation) on GCP Compute Engine (us-west1). Terraform manages the GCP resources, GitHub Actions handles CI/CD, and Tailscale protects administrative access. This repo follows the same structural pattern as its sister project [vaultwarden-ops](https://github.com/kuchida1981/vaultwarden-ops).
 
-## アーキテクチャ
+- Public URL: `https://n8n.u-rei.com`
+- `tailscale ssh` is the only sanctioned SSH path (fixing the legacy `default-allow-ssh` rule that still lingers in the GCP project is out of scope for this repo — see Roadmap)
+- n8n's `/alive` monitoring workflow is what keeps watch over vaultwarden's liveness, so n8n's own data migration directly affects the continuity of that workflow
+- Data persistence: Docker's entire `data-root` lives on a dedicated Persistent Disk, keeping the named volumes (`n8n_data`/`traefik_data`) independent of the VM's lifecycle
+- The n8n image is pinned to a literal tag; Dependabot detects new versions and opens update PRs
+- Rolling a version update into production happens exclusively through `n8n-deploy.yml` (gated by a GitHub Environment approval) — merging the PR alone does not deploy it (see "Updating the n8n version" for details)
+
+## Architecture
 
 ```mermaid
 flowchart TB
-    internet["インターネット (誰でも)"]
-    admin["管理者"]
+    internet["Internet (anyone)"]
+    admin["Administrator"]
 
     subgraph vm["GCE VM (e2-micro) — us-west1-b, Debian 13"]
         traefik["Traefik (TLS-ALPN-01)"]
         n8n["n8n:5678"]
-        disk[("専用Persistent Disk
-        Dockerのdata-root
-        (VMと独立ライフサイクル)")]
+        disk[("Dedicated Persistent Disk
+        Docker data-root
+        (independent of VM lifecycle)")]
 
         traefik --> n8n
-        n8n -.データ永続化.-> disk
+        n8n -.data persistence.-> disk
     end
 
-    internet -- "443のみ
-    (80はTLS用リダイレクト)" --> traefik
+    internet -- "port 443 only
+    (80 redirects for TLS)" --> traefik
     admin -- "Tailscale (WireGuard)
-    tailscale sshのみ" --> vm
+    tailscale ssh only" --> vm
 
-    note["※プロジェクト全体のlegacy `default-allow-ssh`ルールは未是正"]
+    note["※ project-wide legacy `default-allow-ssh` rule not yet fixed"]
     vm -.-> note
 ```
 
-Terraformは`terraform/bootstrap`(1回だけ手動apply)と`terraform/main`(GitHub Actionsが継続的にapply)の2段構成。
+Terraform is split into two stages: `terraform/bootstrap` (manual apply, once) and `terraform/main` (applied continuously by GitHub Actions).
 
-## vaultwarden-opsとの相違点
+## Differences from vaultwarden-ops
 
-同じtailnet・同じGCPプロジェクト(`kuchida-devel`)を共有しているため、以下の点で単純な複製ではなく調整が入っている:
+Because both projects share the same tailnet and the same GCP project (`kuchida-devel`), this isn't a straight copy — a few things are deliberately adjusted:
 
-- **リージョン**: vaultwardenはasia-northeast1だが、n8nはus-west1のまま。GCP Compute Engine常時無料枠のe2-microはus-west1/us-central1/us-east1限定のため、この制約を維持している
-- **リバースプロキシ**: vaultwardenはCaddyだが、n8nはTraefik(n8n公式サンプルの構成をそのまま踏襲したいため)
-- **データ永続化の実装**: vaultwardenはdocker-compose.ymlをbind mountに書き換えているが、n8nはnamed volumeの構造を変えず、Dockerの`data-root`自体を専用ディスクへ向けている(理由は`n8n/docker-compose.yml`と`terraform/main/disk.tf`のコメント参照)
-- **Tailscale ACL**: `tailscale_acl`リソースはtailnetの全ポリシーを単一リソースとして上書き管理するため、2つの独立したTerraform stateが同時にこのリソースを持つと、後からapplyした側が他方の設定を消してしまう。この事故を構造的に防ぐため、**ACLポリシーはvaultwarden-opsの`terraform/main/tailscale.tf`が唯一のオーナーとして管理し、n8n-ops側は`tailscale_acl`リソースを持たない**(`tag:n8n-server`のtagOwners・SSHルールもvaultwarden-ops側で管理される)。n8n-ops側は`tailscale_tailnet_key`(認証キー)のみを管理する。tailnetに新しいサービスを追加する際は、そのサービス自身のリポジトリではなくvaultwarden-opsの`tailscale.tf`にタグを追記する
+- **Region**: vaultwarden runs in asia-northeast1, but n8n stays in us-west1. The GCE always-free e2-micro tier is limited to us-west1/us-central1/us-east1, so this constraint is preserved as-is
+- **Reverse proxy**: vaultwarden uses Caddy, but n8n uses Traefik (to stay close to n8n's official sample configuration)
+- **Data persistence implementation**: vaultwarden rewrites `docker-compose.yml` to use bind mounts, while n8n keeps the named-volume structure unchanged and instead points Docker's `data-root` itself at the dedicated disk (see the comments in `n8n/docker-compose.yml` and `terraform/main/disk.tf` for the reasoning)
+- **Tailscale ACL**: the `tailscale_acl` resource overwrites the entire tailnet policy as a single resource, so if two independent Terraform states both held it, whichever applied last would wipe out the other's config. To structurally prevent that, **vaultwarden-ops' `terraform/main/tailscale.tf` is the sole owner of the ACL policy, and n8n-ops does not hold a `tailscale_acl` resource at all** (the `tag:n8n-server` tagOwners and SSH rules are also managed on the vaultwarden-ops side). n8n-ops only manages the `tailscale_tailnet_key` (auth key). When adding a new service to the tailnet, add its tag to vaultwarden-ops' `tailscale.tf`, not to the new service's own repo
 
-## セットアップ手順
+## Setup
 
-### 0. 前提
+### 0. Prerequisites
 
-- GCPプロジェクトが作成済みで、課金が有効化されていること(vaultwarden-opsと同じプロジェクトを想定)
-- ローカルに`gcloud` CLIと`terraform`(>=1.6)がインストール済みで、`gcloud auth application-default login`済みであること
-- Tailscaleのtailnetに参加済みであること(vaultwarden-opsが既に使っているtailnetを再利用する)
+- A GCP project already exists with billing enabled (assumed to be the same project as vaultwarden-ops)
+- `gcloud` CLI and `terraform` (>=1.6) are installed locally, and `gcloud auth application-default login` has been run
+- You're already a member of the Tailscale tailnet (reusing the tailnet vaultwarden-ops already uses)
 
-### 1. Bootstrap(手動・最初の1回だけ)
+### 1. Bootstrap (manual, once)
 
-`terraform/main`はGCSのリモートバックエンドとWorkload Identity Federation経由のGitHub Actions認証を前提にしているが、そのバケットとWIF Pool自体は「これから作る側」なので、ローカルから一度だけ手動で作成する。
+`terraform/main` assumes a GCS remote backend and GitHub Actions authentication via Workload Identity Federation, but the bucket and WIF Pool themselves are what's "about to be created," so they're set up manually from your local machine, once.
 
 ```bash
 cd terraform/bootstrap
@@ -67,7 +69,7 @@ terraform apply \
   -var="github_repo=<your-github-username>/<your-repo-name>"  # must exactly match the GitHub repo, e.g. kuchida1981/n8n-ops
 ```
 
-apply完了後、以下のoutputを控える(次のGitHub Secrets登録で使う):
+After the apply completes, note the following outputs (you'll need them when registering GitHub Secrets):
 
 ```bash
 terraform output
@@ -76,79 +78,79 @@ terraform output
 # terraform_ci_service_account_email
 ```
 
-**既存環境をアップデートする場合**: `terraform/bootstrap`はGitHub Actionsではなく手動apply専用のため、CI用サービスアカウントのIAM権限(例: `n8n-deploy.yml`用に追加した`roles/iap.tunnelResourceAccessor`・`roles/compute.osAdminLogin`)が変更されたときは、同じ`terraform apply`コマンドを再実行して反映させる必要がある。差分のみが適用され、既存リソースは壊れない。
+**Updating an existing environment**: Since `terraform/bootstrap` is manual-apply-only (not run by GitHub Actions), if the CI service account's IAM permissions change (e.g. `roles/iap.tunnelResourceAccessor` / `roles/compute.osAdminLogin` added for `n8n-deploy.yml`), you need to re-run the same `terraform apply` command to pick up the change. Only the diff is applied; existing resources are untouched.
 
-### 2. Tailscale OAuthクライアントの発行(手動、またはvaultwarden-opsのものを再利用)
+### 2. Issue a Tailscale OAuth client (manual, or reuse vaultwarden-ops')
 
-vaultwarden-opsで既にTerraformプロバイダ用のOAuthクライアント(Policy File + Auth Keysスコープ)を発行済みなら、それをそのまま再利用できる。新規発行が必要な場合は、vaultwarden-opsのREADME「2. Tailscale OAuthクライアントの発行」の手順に倣い、Auth Keysのタグには`tag:n8n-server`を追加で選択する。
+If you've already issued an OAuth client for the Terraform provider in vaultwarden-ops (with Policy File + Auth Keys scopes), you can reuse it as-is. If you need to issue a new one, follow the steps in vaultwarden-ops' README under "2. Issue a Tailscale OAuth client," additionally selecting `tag:n8n-server` for the Auth Keys tag.
 
-いずれの場合も、apply前に https://login.tailscale.com/admin/acl/file で現在のACLを確認し、vaultwarden-opsの`terraform/main/tailscale.tf`(このtailnetのACLポリシーの唯一のオーナー)に`tag:n8n-server`のtagOwners・SSHルールが既に含まれているか照合すること。含まれていない場合は、先にvaultwarden-ops側へそのエントリを追加・applyしてから本リポジトリのapplyに進む。
+Either way, before applying, check the current ACL at https://login.tailscale.com/admin/acl/file and confirm that vaultwarden-ops' `terraform/main/tailscale.tf` (the sole owner of this tailnet's ACL policy) already includes the `tag:n8n-server` tagOwners and SSH rules. If it doesn't, add and apply that entry on the vaultwarden-ops side first, before proceeding to apply this repo.
 
-### 3. GitHub Actions Secretsの登録
+### 3. Register GitHub Actions Secrets
 
-このリポジトリの Settings → Secrets and variables → Actions に、以下を登録する:
+In this repo's Settings → Secrets and variables → Actions, register the following:
 
-| Secret名 | 値 |
+| Secret name | Value |
 |---|---|
-| `GCP_PROJECT_ID` | GCPプロジェクトID |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | bootstrapのoutput `workload_identity_provider` |
-| `GCP_SERVICE_ACCOUNT_EMAIL` | bootstrapのoutput `terraform_ci_service_account_email` |
-| `TF_STATE_BUCKET` | bootstrapのoutput `state_bucket` |
-| `TAILSCALE_OAUTH_CLIENT_ID` | 手順2で発行(または再利用)したClient ID |
-| `TAILSCALE_OAUTH_CLIENT_SECRET` | 手順2で発行(または再利用)したClient Secret |
-| `TAILSCALE_TAILNET` | 自分のtailnet名 |
+| `GCP_PROJECT_ID` | GCP project ID |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | bootstrap output `workload_identity_provider` |
+| `GCP_SERVICE_ACCOUNT_EMAIL` | bootstrap output `terraform_ci_service_account_email` |
+| `TF_STATE_BUCKET` | bootstrap output `state_bucket` |
+| `TAILSCALE_OAUTH_CLIENT_ID` | Client ID issued (or reused) in step 2 |
+| `TAILSCALE_OAUTH_CLIENT_SECRET` | Client Secret issued (or reused) in step 2 |
+| `TAILSCALE_TAILNET` | Your tailnet name |
 
-**重要**: これらはリポジトリにコミットしない。すべてGitHub Actions Secretsとしてのみ保持する(このリポジトリは公開リポジトリなので特に注意)。
+**Important**: Never commit these to the repo. Keep them exclusively as GitHub Actions Secrets (this repo is public, so be especially careful).
 
-### 4. GitHub Environmentの承認ゲート設定(手動)
+### 4. Configure the GitHub Environment approval gate (manual)
 
-`terraform-apply.yml`ワークフローは`environment: production`を参照しているが、実際に人間の承認待ちで停止させるprotection ruleはワークフローYAMLだけでは設定できない。このリポジトリの Settings → Environments → New environment で `production` を作成し、"Required reviewers" に自分自身(または信頼できるレビュワー)を追加する。
+The `terraform-apply.yml` workflow references `environment: production`, but the protection rule that actually pauses it for human approval can't be set via workflow YAML alone. In this repo's Settings → Environments → New environment, create `production` and add yourself (or a trusted reviewer) as a "Required reviewer."
 
-### 5. Phase A: テストサブドメインでの初回apply
+### 5. Phase A: First apply against the test subdomain
 
-`terraform/main/variables.tf`の`domain`変数はデフォルトで`n8n-test.u-rei.com`を指すようになっている。`main`ブランチへのマージ後、GitHub Actionsの`terraform apply`ワークフローが承認待ちで停止するので、GitHub上で承認する。初回applyでVM・静的IP・ファイアウォール・データディスク・Secret Manager・Tailscale認証キーが一括作成される(ACLポリシー自体はvaultwarden-ops側で管理済みである必要がある。手順2参照)。
+`terraform/main/variables.tf`'s `domain` variable defaults to `n8n-test.u-rei.com`. After merging to `main`, the GitHub Actions `terraform apply` workflow will pause waiting for approval — approve it on GitHub. The first apply creates the VM, static IP, firewall, data disk, Secret Manager, and Tailscale auth key all at once (the ACL policy itself must already be managed on the vaultwarden-ops side — see step 2).
 
-apply完了後、出力された静的External IPを使い、`u-rei.com`のDNS管理画面で`n8n-test.u-rei.com`のAレコードを手動作成する。
+After the apply completes, use the static external IP it outputs to manually create an A record for `n8n-test.u-rei.com` in `u-rei.com`'s DNS management.
 
-以下を確認する:
-- `https://n8n-test.u-rei.com`でLet's Encrypt証明書が有効になっており、n8nの初期セットアップ画面が表示される
-- `tailscale ssh n8n`でVMに接続できる
-- `free -h`/`swapon --show`でswapが有効
-- VM再起動後もstartup-scriptの再実行で二重処理が起きない
+Verify the following:
+- `https://n8n-test.u-rei.com` has a valid Let's Encrypt certificate and shows n8n's initial setup screen
+- You can connect to the VM with `tailscale ssh n8n`
+- Swap is active, per `free -h`/`swapon --show`
+- Rebooting the VM doesn't cause the startup-script to double-run
 
-### 6. Phase B〜E: 本番データ移行とカットオーバー
+### 6. Phase B–E: Production data migration and cutover
 
-Phase Aの検証が済んでから着手する。ダウンタイムは許容する前提。
+Start this once Phase A is verified. Downtime is acceptable.
 
-1. 旧VM(`n8n-debian`, us-west1-b)で`docker compose down`
-2. 旧VMの`n8n_data`ボリューム配下全体(`config`, `database.sqlite`, `binaryData/`, `nodes/`, `ssh/`, `storage/`等)をtailscale経由のrsync/scpで新VMのDocker data-root配下へコピー
-3. 新VM上で`docker compose down && docker compose up -d`し、コピーしたデータでn8nが起動することを確認
-4. n8nエディタで既存ワークフロー・credentialsが表示されること(encryptionKeyが正しく引き継がれている証拠)を確認
-5. `terraform/main/variables.tf`の`domain`のデフォルト値を`n8n.u-rei.com`に変更してPR→承認→apply
-6. `n8n.u-rei.com`向けの新しいTLS証明書が発行されるのを待ち、DNSのAレコードを新VMの静的IPへ切り替える
-7. vaultwardenの`/alive`監視ワークフローが正常にDiscord通知を送れることを確認する
-8. 問題がなければ旧VM(`n8n-debian`)とそのディスクを削除する
+1. On the old VM (`n8n-debian`, us-west1-b), run `docker compose down`
+2. Copy everything under the old VM's `n8n_data` volume (`config`, `database.sqlite`, `binaryData/`, `nodes/`, `ssh/`, `storage/`, etc.) to the new VM's Docker data-root, via rsync/scp over tailscale
+3. On the new VM, run `docker compose down && docker compose up -d` and confirm n8n starts with the copied data
+4. In the n8n editor, confirm existing workflows and credentials appear (proof that the encryptionKey carried over correctly)
+5. Change `terraform/main/variables.tf`'s `domain` default to `n8n.u-rei.com`, then PR → approve → apply
+6. Wait for the new TLS certificate for `n8n.u-rei.com` to be issued, then switch the DNS A record to the new VM's static IP
+7. Confirm vaultwarden's `/alive` monitoring workflow can still successfully send Discord notifications
+8. Once confirmed, delete the old VM (`n8n-debian`) and its disk
 
-## n8nのバージョン更新
+## Updating the n8n version
 
-n8nイメージは`n8n/docker-compose.yml`でリテラルタグ固定しており、更新は以下の2段階の承認を経て反映される。即時反映は意図しておらず、月1回程度の更新頻度を想定している。
+The n8n image is pinned to a literal tag in `n8n/docker-compose.yml`; updates go through two approval stages before taking effect. Immediate rollout isn't the intent — this assumes roughly a monthly update cadence.
 
-1. **バージョンを受け入れる**: Dependabotがn8nの新バージョンを検知すると、`n8n/docker-compose.yml`のタグ更新を提案するPRを自動作成する(n8nイメージは`n8nio/n8n`という暗黙のDocker Hub参照で記述しており、Dependabotが認証情報なしで検知できる。`docker.n8n.io`独自レジストリを直接参照する構成は、Dependabotの`docker-registry`タイプが`username`/`password`を必須とするため採用していない)。PRをレビューし、`main`へマージする
-2. **今このタイミングで反映する**: マージをトリガーに`n8n-deploy.yml`が起動し、`production` Environmentの承認待ちで一時停止する。承認すると、CIランナーがGCP IAP tunnel経由でVMへSSHし、`git pull && docker compose pull && docker compose up -d`を実行する。VM自体の再起動は行わないため、Traefikの証明書(`acme.json`)には影響しない
+1. **Accepting a version**: When Dependabot detects a new n8n version, it opens a PR proposing a tag update in `n8n/docker-compose.yml` (the image is referenced as the implicit `n8nio/n8n` Docker Hub reference, which Dependabot can detect without credentials; referencing the `docker.n8n.io` registry directly wasn't adopted because Dependabot's `docker-registry` type requires `username`/`password`). Review the PR and merge it into `main`
+2. **Rolling it out now**: The merge triggers `n8n-deploy.yml`, which pauses waiting for approval on the `production` Environment. Once approved, the CI runner SSHes into the VM over a GCP IAP tunnel and runs `git pull && docker compose pull && docker compose up -d`. The VM itself is not rebooted, so Traefik's certificate (`acme.json`) is unaffected
 
-反映後は、対象のn8nバージョンで実際にワークフローが動作していること(vaultwardenの`/alive`監視ワークフロー含む)を確認する。
+After rollout, confirm workflows are actually running on the new n8n version (including vaultwarden's `/alive` monitoring workflow).
 
-## ロードマップ(本リポジトリの現時点のスコープ外)
+## Roadmap (currently out of scope for this repo)
 
-- NASへの自動バックアップ(vaultwarden-opsの`add-nas-backup`パターンをn8n向けに展開する、次の別change)
-- GCPプロジェクト全体に効いている legacy な`default-allow-ssh`/`default-allow-rdp`ファイアウォールルールの是正(vaultwarden VMにも影響する既知の問題)
-- リバースプロキシのCaddyへの統一(Traefikの現状維持を優先しているが、将来検討)
+- Automated backups to NAS (extending vaultwarden-ops' `add-nas-backup` pattern to n8n, as a separate future change)
+- Fixing the legacy `default-allow-ssh`/`default-allow-rdp` firewall rules that apply project-wide (a known issue that also affects the vaultwarden VM)
+- Unifying the reverse proxy on Caddy (Traefik is kept as-is for now, but under consideration for the future)
 
-## ディレクトリ構成
+## Directory structure
 
 ```
-terraform/bootstrap/  … 手動・1回だけapply。GCS state bucket, WIF Pool, CI用SA
-terraform/main/       … GitHub Actionsが継続的にapply。VM/FW/Disk/Secret Manager/Tailscale認証キー(ACLポリシー自体はvaultwarden-ops側が唯一のオーナー)
-n8n/                   … docker-compose.yml(Traefik + n8n)
-.github/workflows/     … terraform plan(PR) / apply(main, 承認ゲート付き) / n8n-deploy(n8n/配下の変更、承認ゲート付き)
+terraform/bootstrap/  … manual, apply once. GCS state bucket, WIF Pool, CI service account
+terraform/main/       … applied continuously by GitHub Actions. VM/FW/Disk/Secret Manager/Tailscale auth key (the ACL policy itself is solely owned by vaultwarden-ops)
+n8n/                   … docker-compose.yml (Traefik + n8n)
+.github/workflows/     … terraform plan (PR) / apply (main, approval-gated) / n8n-deploy (changes under n8n/, approval-gated)
 ```
