@@ -13,16 +13,20 @@ n8n VMのtailnet参加・タグ付け・ACLによるSSHアクセス制御を提�
 - **WHEN** VMインスタンスが起動する
 - **THEN** 人手を介さずに`tailscale up`が実行され、当該VMがTailscale管理画面上でtailnetの一員として`tag:n8n-server`付きで認識される
 
-### Requirement: ACL・認証キーのTerraform管理、既存タグの保持
-システムは、Tailscaleの公式Terraformプロバイダを用いて、tailnetの認証キー発行とACLポリシー(タグ`tag:n8n-server`に対する権限設定を含む)をコードとして管理しなければならない(SHALL)。このtailnetは他リポジトリ(vaultwarden-ops)によっても`tailscale_acl`リソースで管理されているため、n8n-ops側がACLポリシー全体を適用する際は、vaultwarden-ops側が管理する既存のタグ・ACLエントリ(`tag:vaultwarden-server`関連)を消失させてはならない(SHALL NOT)。
+### Requirement: 認証キーのTerraform管理、ACLポリシーは他リポジトリが唯一のオーナー
+システムは、Tailscaleの公式Terraformプロバイダを用いて、`tag:n8n-server`が付与されたtailnet認証キーの発行をコードとして管理しなければならない(SHALL)。ACLポリシー(`tailscale_acl`リソース)はTailscale APIの仕様上ファイル全体を単一リソースとして上書き管理するしかなく、複数リポジトリが同時に所有すると後から適用した側が他方の設定を消失させる競合が生じるため、n8n-opsリポジトリはACLポリシーそのものを管理してはならない(SHALL NOT)。ACLポリシー(`tag:n8n-server`のtagOwners・SSHルールを含む)は姉妹リポジトリvaultwarden-opsの`terraform/main/tailscale.tf`が唯一のオーナーとして管理する。
 
 #### Scenario: Terraform applyでタグ付き認証キーが発行される
 - **WHEN** `terraform apply`を実行する
 - **THEN** `tag:n8n-server`が付与された認証キーが発行され、Secret Managerに書き込まれる
 
-#### Scenario: 他リポジトリが管理するACLエントリが保持される
-- **WHEN** n8n-opsリポジトリで`terraform apply`を実行し、tailnetのACLポリシーが更新される
-- **THEN** 更新後のACLポリシーにも`tag:vaultwarden-server`のtagOwners・SSHルールが引き続き含まれている
+#### Scenario: このリポジトリはACLポリシーを変更しない
+- **WHEN** n8n-opsリポジトリで`terraform apply`を実行する
+- **THEN** tailnetのACLポリシー(`tailscale_acl`)には一切変更が生じない(このリポジトリはそのリソースを持たない)
+
+#### Scenario: vaultwarden-ops側でtag:n8n-serverが未定義だと認証キー発行が失敗する
+- **WHEN** vaultwarden-ops側のACLポリシーから`tag:n8n-server`のtagOwnersエントリが欠落した状態で`terraform apply`を実行する
+- **THEN** 認証キー発行がTailscale APIの400エラー(タグ未許可)で失敗し、ACLの不整合が可視化される
 
 ### Requirement: SSHアクセスはtailnet経由を正規経路とする
 システムは、VMへの正規のSSHアクセス手段として`tailscale ssh`を提供しなければならない(SHALL)。このVM自身に紐づく公開ファイアウォールルールとして、SSH(22番)を許可するルールを追加してはならない(SHALL NOT)。

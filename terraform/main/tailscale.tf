@@ -1,77 +1,28 @@
 # Auth key the VM consumes at boot to join the tailnet unattended.
-# `preauthorized = true` combined with the ACL's tagOwners entry below
-# means no manual approval step is needed in the Tailscale admin console.
-# `reusable = true` because the VM may be destroyed and recreated (e.g. a
-# machine-type change); a one-time key would leave the replacement VM
-# unable to join tailnet, and therefore unreachable via `tailscale ssh`.
-# The key only ever tags a device as tag:n8n-server, and is only readable
-# by that VM's own runtime service account, so the exposure from reuse is
-# minimal.
+# `preauthorized = true` combined with the ACL's tagOwners entry (owned by
+# the sibling vaultwarden-ops repo - see below) means no manual approval
+# step is needed in the Tailscale admin console. `reusable = true` because
+# the VM may be destroyed and recreated (e.g. a machine-type change); a
+# one-time key would leave the replacement VM unable to join tailnet, and
+# therefore unreachable via `tailscale ssh`. The key only ever tags a
+# device as tag:n8n-server, and is only readable by that VM's own runtime
+# service account, so the exposure from reuse is minimal.
 #
-# Explicit depends_on: without it, Terraform has no reason to think this
-# resource relates to tailscale_acl.this (neither references the other's
-# attributes) and creates both in parallel. The Tailscale API rejects a key
-# request for tag:n8n-server with a 400 ("tags ... invalid or not
-# permitted") if that tag isn't registered in the tailnet's ACL tagOwners
-# yet - observed in practice on a fresh apply where the key request raced
-# ahead of the ACL write completing.
+# NOTE: this repo does NOT manage a `tailscale_acl` resource. The Tailscale
+# API has no partial-update endpoint for the ACL policy file - it's always
+# a whole-file overwrite - so two Terraform states both owning it (as this
+# repo and vaultwarden-ops once both did) means whichever applies last wins
+# and silently drops the other's tags/rules. vaultwarden-ops' own
+# `terraform/main/tailscale.tf` is now the tailnet's sole ACL owner and
+# already contains tag:n8n-server's tagOwners entry and ssh rule; if that
+# tag is ever missing there, this resource fails with a 400 ("tags ...
+# invalid or not permitted") rather than silently doing the wrong thing.
+# Adding another tailnet-connected service means a PR to vaultwarden-ops'
+# tailscale.tf, not a content sync across repos.
 resource "tailscale_tailnet_key" "vm" {
   reusable      = true
   ephemeral     = false
   preauthorized = true
   tags          = ["tag:n8n-server"]
   expiry        = 7776000 # 90 days; rotate by re-applying before this lapses
-
-  depends_on = [tailscale_acl.this]
-}
-
-# WARNING: `tailscale_acl` manages the tailnet's *entire* ACL policy file as
-# a single resource, and this tailnet is already managed the same way by a
-# SEPARATE Terraform state: vaultwarden-ops' `terraform/main/tailscale.tf`.
-# Two independent Terraform states both owning this resource means whichever
-# repo applies last "wins" and silently overwrites the other's tags/rules
-# unless the ACL content here is kept as a superset of both.
-#
-# The policy below is vaultwarden-ops' current policy (tag:vaultwarden-server
-# tagOwners + its ssh rule) with tag:n8n-server's tagOwners and ssh rule
-# added alongside it. Before applying, re-check
-# https://login.tailscale.com/admin/acl/file for any drift against
-# vaultwarden-ops' tailscale.tf (e.g. a rule added there since this file was
-# last written) and fold it in here too - see migrate-n8n-to-iac's
-# design.md ("Tailscale ACLの2リポジトリ間管理") and tasks.md 4.2-4.3.
-resource "tailscale_acl" "this" {
-  # The provider refuses to blindly clobber a hand-edited, non-default ACL
-  # (safety guard: "You are trying to overwrite a non-default policy").
-  # That's expected here: this tailnet's policy already has
-  # vaultwarden-ops' custom entries applied, and the content below is
-  # reviewed to be a superset of that, so overwriting it is intentional.
-  overwrite_existing_content = true
-
-  acl = jsonencode({
-    tagOwners = {
-      "tag:vaultwarden-server" = ["autogroup:admin"]
-      "tag:n8n-server"         = ["autogroup:admin"]
-    }
-    acls = [
-      {
-        action = "accept"
-        src    = ["*"]
-        dst    = ["*:*"]
-      }
-    ]
-    ssh = [
-      {
-        action = "check"
-        src    = ["autogroup:admin"]
-        dst    = ["tag:vaultwarden-server"]
-        users  = ["autogroup:nonroot", "root"]
-      },
-      {
-        action = "check"
-        src    = ["autogroup:admin"]
-        dst    = ["tag:n8n-server"]
-        users  = ["autogroup:nonroot", "root"]
-      }
-    ]
-  })
 }

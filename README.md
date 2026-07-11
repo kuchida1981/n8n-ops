@@ -41,7 +41,7 @@ Terraformは`terraform/bootstrap`(1回だけ手動apply)と`terraform/main`(GitH
 - **リージョン**: vaultwardenはasia-northeast1だが、n8nはus-west1のまま。GCP Compute Engine常時無料枠のe2-microはus-west1/us-central1/us-east1限定のため、この制約を維持している
 - **リバースプロキシ**: vaultwardenはCaddyだが、n8nはTraefik(n8n公式サンプルの構成をそのまま踏襲したいため)
 - **データ永続化の実装**: vaultwardenはdocker-compose.ymlをbind mountに書き換えているが、n8nはnamed volumeの構造を変えず、Dockerの`data-root`自体を専用ディスクへ向けている(理由は`n8n/docker-compose.yml`と`terraform/main/disk.tf`のコメント参照)
-- **Tailscale ACL**: `tailscale_acl`リソースはtailnetの全ポリシーを単一リソースとして上書き管理するため、n8n-opsとvaultwarden-ops、2つの独立したTerraform stateが同じtailnetを管理する形になっている。`terraform/main/tailscale.tf`は両リポジトリのタグ・ACLエントリを合成した内容として書かれており、どちらか一方だけをapplyすると他方の設定を消してしまうリスクがある。**このリポジトリのtailscale.tfをapplyする前には、必ずvaultwarden-ops側の現行ACL内容と照合すること**
+- **Tailscale ACL**: `tailscale_acl`リソースはtailnetの全ポリシーを単一リソースとして上書き管理するため、2つの独立したTerraform stateが同時にこのリソースを持つと、後からapplyした側が他方の設定を消してしまう。この事故を構造的に防ぐため、**ACLポリシーはvaultwarden-opsの`terraform/main/tailscale.tf`が唯一のオーナーとして管理し、n8n-ops側は`tailscale_acl`リソースを持たない**(`tag:n8n-server`のtagOwners・SSHルールもvaultwarden-ops側で管理される)。n8n-ops側は`tailscale_tailnet_key`(認証キー)のみを管理する。tailnetに新しいサービスを追加する際は、そのサービス自身のリポジトリではなくvaultwarden-opsの`tailscale.tf`にタグを追記する
 
 ## セットアップ手順
 
@@ -78,7 +78,7 @@ terraform output
 
 vaultwarden-opsで既にTerraformプロバイダ用のOAuthクライアント(Policy File + Auth Keysスコープ)を発行済みなら、それをそのまま再利用できる。新規発行が必要な場合は、vaultwarden-opsのREADME「2. Tailscale OAuthクライアントの発行」の手順に倣い、Auth Keysのタグには`tag:n8n-server`を追加で選択する。
 
-いずれの場合も、apply前に https://login.tailscale.com/admin/acl/file で現在のACL(vaultwarden-opsが管理する`tag:vaultwarden-server`関連の設定を含む)を確認し、`terraform/main/tailscale.tf`の内容と一致しているか照合すること。
+いずれの場合も、apply前に https://login.tailscale.com/admin/acl/file で現在のACLを確認し、vaultwarden-opsの`terraform/main/tailscale.tf`(このtailnetのACLポリシーの唯一のオーナー)に`tag:n8n-server`のtagOwners・SSHルールが既に含まれているか照合すること。含まれていない場合は、先にvaultwarden-ops側へそのエントリを追加・applyしてから本リポジトリのapplyに進む。
 
 ### 3. GitHub Actions Secretsの登録
 
@@ -102,7 +102,7 @@ vaultwarden-opsで既にTerraformプロバイダ用のOAuthクライアント(Po
 
 ### 5. Phase A: テストサブドメインでの初回apply
 
-`terraform/main/variables.tf`の`domain`変数はデフォルトで`n8n-test.u-rei.com`を指すようになっている。`main`ブランチへのマージ後、GitHub Actionsの`terraform apply`ワークフローが承認待ちで停止するので、GitHub上で承認する。初回applyでVM・静的IP・ファイアウォール・データディスク・Secret Manager・Tailscale ACL/認証キーが一括作成される。
+`terraform/main/variables.tf`の`domain`変数はデフォルトで`n8n-test.u-rei.com`を指すようになっている。`main`ブランチへのマージ後、GitHub Actionsの`terraform apply`ワークフローが承認待ちで停止するので、GitHub上で承認する。初回applyでVM・静的IP・ファイアウォール・データディスク・Secret Manager・Tailscale認証キーが一括作成される(ACLポリシー自体はvaultwarden-ops側で管理済みである必要がある。手順2参照)。
 
 apply完了後、出力された静的External IPを使い、`u-rei.com`のDNS管理画面で`n8n-test.u-rei.com`のAレコードを手動作成する。
 
@@ -144,7 +144,7 @@ n8nイメージは`n8n/docker-compose.yml`でリテラルタグ固定してお�
 
 ```
 terraform/bootstrap/  … 手動・1回だけapply。GCS state bucket, WIF Pool, CI用SA
-terraform/main/       … GitHub Actionsが継続的にapply。VM/FW/Disk/Secret Manager/Tailscale ACL
+terraform/main/       … GitHub Actionsが継続的にapply。VM/FW/Disk/Secret Manager/Tailscale認証キー(ACLポリシー自体はvaultwarden-ops側が唯一のオーナー)
 n8n/                   … docker-compose.yml(Traefik + n8n)
 .github/workflows/     … terraform plan(PR) / apply(main, 承認ゲート付き) / n8n-deploy(n8n/配下の変更、承認ゲート付き)
 ```
