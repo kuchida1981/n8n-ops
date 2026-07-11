@@ -13,25 +13,29 @@ Infrastructure for self-hosting a personal instance of n8n (workflow automation)
 
 ## Architecture
 
-```
-                         Internet (anyone)
-                                │ port 443 only (80 redirects for TLS)
-                                ▼
-                    ┌───────────────────────────┐
-                    │  GCE VM (e2-micro)          │
-                    │  us-west1-b, Debian 13      │
-                    │  ┌───────────────────────┐  │
-                    │  │ Traefik (TLS-ALPN-01)   │  │
-                    │  │  → n8n:5678             │  │
-                    │  └───────────────────────┘  │
-                    │  Docker data-root:           │
-                    │   dedicated Persistent Disk   │
-                    │   (independent of VM lifecycle)│
-                    └───────────────┬───────────────┘
-                                    │ Tailscale (WireGuard)
-                                    ▼
-                         SSH only via tailscale ssh
-                (project-wide legacy rules not yet fixed)
+```mermaid
+flowchart TB
+    internet["Internet (anyone)"]
+    admin["Administrator"]
+
+    subgraph vm["GCE VM (e2-micro) — us-west1-b, Debian 13"]
+        traefik["Traefik (TLS-ALPN-01)"]
+        n8n["n8n:5678"]
+        disk[("Dedicated Persistent Disk
+        Docker data-root
+        (independent of VM lifecycle)")]
+
+        traefik --> n8n
+        n8n -.data persistence.-> disk
+    end
+
+    internet -- "port 443 only
+    (80 redirects for TLS)" --> traefik
+    admin -- "Tailscale (WireGuard)
+    tailscale ssh only" --> vm
+
+    note["※ project-wide legacy `default-allow-ssh` rule not yet fixed"]
+    vm -.-> note
 ```
 
 Terraform is split into two stages: `terraform/bootstrap` (manual apply, once) and `terraform/main` (applied continuously by GitHub Actions).
