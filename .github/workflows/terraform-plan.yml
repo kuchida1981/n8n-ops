@@ -2,6 +2,15 @@ name: Terraform Plan
 
 on:
   pull_request:
+  # Dependabot's own PRs never receive repository secrets under the plain
+  # `pull_request` event (GitHub treats them like fork PRs for this
+  # purpose), so `plan`'s GCP auth step always fails there. `pull_request_target`
+  # runs with the base branch's secrets, at the cost of executing the PR's
+  # code with those secrets available - only safe to do for authors we
+  # trust not to smuggle in malicious diffs, hence gating below on
+  # `github.actor == 'dependabot[bot]'`. Human-authored PRs keep using the
+  # plain `pull_request` event, unchanged.
+  pull_request_target:
 
 permissions:
   contents: read
@@ -10,6 +19,9 @@ permissions:
 
 jobs:
   plan:
+    if: |
+      (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
+      (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -17,6 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       # "plan" is a required status check on main, so this workflow must
