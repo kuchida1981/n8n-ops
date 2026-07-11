@@ -55,7 +55,7 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - if: steps.changes.outputs.relevant == 'true'
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
 
       - name: Terraform Init
         if: steps.changes.outputs.relevant == 'true'
