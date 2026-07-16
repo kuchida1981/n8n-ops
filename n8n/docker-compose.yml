@@ -8,7 +8,7 @@ services:
     # (confirmed via `docker exec n8n-traefik-1 traefik version` over SSH),
     # not an assumed/guessed one - traefik v2->v3 is a breaking config
     # change, so guessing wrong here would be a silent downgrade.
-    image: "traefik:v3.7.7"
+    image: "traefik:v3.7.8"
     restart: always
     command:
       - "--api=true"
