@@ -14,16 +14,25 @@ permissions:
 
 jobs:
   summary:
-    name: Image version summary
+    name: Image version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Show image version diff
         run: |
-          diff_output=$(git diff HEAD^ HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' || true)
+          # Diff against the last *approved* deploy, not just the previous
+          # commit: a rejected run doesn't revert its commit off main, so
+          # HEAD^ would hide changes (e.g. a rejected traefik bump) that a
+          # later approved run's `git pull --ff-only` deploys anyway.
+          if git rev-parse -q --verify refs/tags/n8n-last-deploy >/dev/null; then
+            base=refs/tags/n8n-last-deploy
+          else
+            base=HEAD^
+          fi
+          diff_output=$(git diff "$base" HEAD -- n8n/docker-compose.yml | grep '^[+-].*image:' || true)
           if [ -n "$diff_output" ]; then
             {
               echo "### Image Changes"
@@ -41,7 +50,12 @@ jobs:
     # Requires the required-reviewers rule already configured for that
     # Environment in repo Settings.
     environment: production
+    permissions:
+      contents: write
+      id-token: write
     steps:
+      - uses: actions/checkout@v7
+
       - id: auth
         uses: google-github-actions/auth@v3
         with:
@@ -62,3 +76,8 @@ jobs:
           # boot-time git pull): a deploy run's whole point is a legible
           # pass/fail signal in the Actions UI, so a pull failure must fail
           # the job rather than being silently swallowed.
+
+      - name: Mark commit as deployed
+        run: |
+          git tag -f n8n-last-deploy
+          git push -f origin n8n-last-deploy
