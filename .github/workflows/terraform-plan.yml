@@ -69,7 +69,15 @@ jobs:
           TF_VAR_tailscale_tailnet: ${{ secrets.TAILSCALE_TAILNET }}
           TF_VAR_tailscale_oauth_client_id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           TF_VAR_tailscale_oauth_client_secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-        run: terraform plan -no-color -out=tfplan | tee plan.txt
+        # Plain `cmd | tee file` masks cmd's exit code with tee's (always 0),
+        # so a failed plan would still show this step - and the required
+        # check - as green. `set -o pipefail` makes the step fail when
+        # terraform does; `2>&1` also gets the actual error text into
+        # plan.txt so it shows up in the PR comment below instead of only
+        # in the Actions log.
+        run: |
+          set -o pipefail
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan.txt
 
       - name: Comment plan on PR
         if: steps.changes.outputs.relevant == 'true'
@@ -80,6 +88,78 @@ jobs:
             const plan = fs.readFileSync('terraform/main/plan.txt', 'utf8');
             const maxLen = 60000;
             const body = `### Terraform Plan\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan.slice(0, maxLen)}\n\`\`\`\n\n</details>`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+  # terraform/bootstrap gets its own job (not a matrix entry alongside
+  # "plan" above) because it needs a different variable set - no Tailscale
+  # vars - and because it's plan-only: apply for terraform/bootstrap stays
+  # manual (see Issue #41), so keeping it structurally separate avoids any
+  # risk of the two directories' concerns bleeding into each other.
+  plan-bootstrap:
+    if: |
+      (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
+      (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/bootstrap
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # Same rationale as the "Check for relevant changes" step in the
+      # "plan" job above: this must always run and complete, even as a
+      # no-op, so a PR that doesn't touch terraform/bootstrap doesn't leave
+      # anything stuck pending.
+      - name: Check for relevant changes
+        id: changes
+        working-directory: ${{ github.workspace }}
+        run: |
+          if git diff --quiet "origin/${{ github.event.pull_request.base.ref }}...HEAD" -- terraform/bootstrap .github/workflows/terraform-plan.yml; then
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - id: auth
+        if: steps.changes.outputs.relevant == 'true'
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - if: steps.changes.outputs.relevant == 'true'
+        uses: hashicorp/setup-terraform@v4
+
+      - name: Terraform Init
+        if: steps.changes.outputs.relevant == 'true'
+        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+
+      - name: Terraform Plan
+        if: steps.changes.outputs.relevant == 'true'
+        env:
+          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_github_repo: ${{ github.repository }}
+        run: |
+          set -o pipefail
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan.txt
+
+      - name: Comment plan on PR
+        if: steps.changes.outputs.relevant == 'true'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform/bootstrap/plan.txt', 'utf8');
+            const maxLen = 60000;
+            const body = `### Terraform Plan (bootstrap)\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan.slice(0, maxLen)}\n\`\`\`\n\n</details>`;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

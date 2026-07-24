@@ -99,6 +99,8 @@ terraform output
 
 **既存環境をアップデートする場合**: `terraform/bootstrap`はGitHub Actionsではなく手動apply専用のため、CI用サービスアカウントのIAM権限(例: `n8n-deploy.yml`用に追加した`roles/iap.tunnelResourceAccessor`・`roles/compute.osAdminLogin`)が変更されたときは、同じ`terraform apply`コマンドを再実行して反映させる必要がある。差分のみが適用され、既存リソースは壊れない。stateはGCS上にあるため、どのマシンからでも`terraform init -backend-config="bucket=<state_bucket>"`でstateに再接続すればよく、最後にapplyしたマシンである必要はない。
 
+**planは自動化されているが、applyはされていない**: `.github/workflows/terraform-plan.yml`は、すべてのPR(dependabotによる週次providerバージョンアップPRを含む)に対して`terraform/bootstrap`への`terraform plan`を実行し、結果をコメントする。`terraform/main`と同じ読み取り権限を持つCI用サービスアカウントを使う。一方`terraform-apply.yml`は**意図的に`terraform/bootstrap`を対象外にしている**: このディレクトリはCI用サービスアカウント自身・そのWorkload Identity Federation Pool・そのSA自身へのproject IAMバインディングを作成する構成であり、CIがこれをapplyできると、そのIDが自分自身により広い権限を無監督で付与できてしまうため。CIが投稿したplanをレビューした上で、上記の通り手動で`terraform apply`することが、`terraform/bootstrap`への変更を反映する唯一の方法であることに変わりはない。
+
 ### 2. Tailscale OAuthクライアントの発行(手動、またはvaultwarden-opsのものを再利用)
 
 vaultwarden-opsで既にTerraformプロバイダ用のOAuthクライアント(Policy File + Auth Keysスコープ)を発行済みなら、それをそのまま再利用できる。新規発行が必要な場合は、vaultwarden-opsのREADME「2. Tailscale OAuthクライアントの発行」の手順に倣い、Auth Keysのタグには`tag:n8n-server`を追加で選択する。
@@ -171,5 +173,5 @@ n8nイメージは`n8n/docker-compose.yml`でリテラルタグ固定してお�
 terraform/bootstrap/  … 手動・1回だけapply。GCS state bucket, WIF Pool, CI用SA
 terraform/main/       … GitHub Actionsが継続的にapply。VM/FW/Disk/Secret Manager/Tailscale認証キー(ACLポリシー自体はvaultwarden-ops側が唯一のオーナー)
 n8n/                   … docker-compose.yml(Traefik + n8n)
-.github/workflows/     … terraform plan(PR) / apply(main, 承認ゲート付き) / n8n-deploy(n8n/配下の変更、承認ゲート付き)
+.github/workflows/     … terraform plan(PR、terraform/main・terraform/bootstrapの両方が対象) / apply(main, 承認ゲート付き、terraform/mainのみ) / n8n-deploy(n8n/配下の変更、承認ゲート付き)
 ```
