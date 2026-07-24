@@ -64,3 +64,12 @@ issue #41で既に整理した通り、bootstrapは`terraform_ci`自身・WIF Po
 ## Open Questions
 
 - 追加する具体的なロール名(`roles/iam.workloadIdentityPoolViewer`など)は、実装時に`terraform plan`を実際に試行しエラーメッセージを見ながら過不足なく決定する(タスクで明記)。
+
+## Postscript: 実装中に見つかった追加の発見
+
+タスク3.1(PR #43でのplan実地確認)で、当初のViewer系ロール選定だけでは不十分だったことが判明した:
+
+- `roles/storage.objectAdmin`(バケット単位、`google_storage_bucket_iam_member.terraform_ci_state_access`)はオブジェクトレベルの権限のみで、`storage.buckets.get`(バケット自体のメタデータ読み取り、`google_storage_bucket.tfstate`リソースのrefreshに必要)を含んでいなかった。対応として`roles/storage.legacyBucketReader`をバケットスコープで追加した(project全体ではなくこのバケットのみに絞ったIAMバインディング)。
+- さらに深刻な副次的発見として、`terraform-plan.yml`の`terraform plan -no-color -out=tfplan | tee plan.txt`が`pipefail`無しのパイプだったため、terraform自体が失敗してもステップは成功扱いになり、CIのrequired checkが実際の失敗を握りつぶしていた。これは`terraform/main`用の既存jobにも同型のバグとして存在しており(今回のbootstrap用jobはそこからパターンをコピーした)、ユーザーの判断で両方のjobに`set -o pipefail`と`2>&1`を追加して修正した。
+
+この経験から得られる教訓: 権限設計は「コードレビューで足りていそうに見える」だけでは不十分で、実際に対象環境で`terraform plan`を試行しないと過不足が分からない。今回のようにCIのタスク3(動作確認)を「念のための確認」ではなく「設計の正しさを検証する必須ステップ」として扱ったことが、本番運用前にこの2つの問題を捕まえられた理由。

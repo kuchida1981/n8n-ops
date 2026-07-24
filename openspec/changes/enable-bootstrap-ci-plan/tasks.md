@@ -13,9 +13,9 @@
 
 - [x] 2.1 [ユーザー作業] タスク1.1のコード変更を取り込んだ上で、README記載の既存環境向け手順(`terraform init -backend-config="bucket=<state_bucket>"` → `terraform apply -var="project_id=..." -var="github_repo=..."`)で`terraform/bootstrap`を手動applyし、CI用SA(`terraform_ci`)に新しいViewer系ロールを付与する
 - [x] 2.2 [ユーザー作業] applyの差分が、追加したロールの付与のみであり、他のリソースに意図しない変更が無いことを確認する(実際に`Plan: 3 to add, 0 to change, 0 to destroy.`で、追加された3ロール以外への影響なしを確認)
+- [ ] 2.3 [ユーザー作業] PR #43でのplan実地確認(タスク3.1)で`storage.buckets.get`権限不足が判明したため追加した`roles/storage.legacyBucketReader`(バケットスコープ)を、同じ手動apply手順で反映する
 
 ## 3. 動作確認 — [ユーザーが手動で実行する作業]
 
-- [ ] 3.1 [ユーザー作業] 既存のbootstrap向けdependabot PR(あれば)を再実行(re-run)するか、無ければ`terraform/bootstrap`の些細な変更(コメント追加等)で試験PRを作成し、CI上で`terraform plan`が正常終了し、PRにplan結果がコメントされることを確認する
-- [ ] 3.2 [ユーザー作業] 同じPR上で、`terraform/bootstrap/**`を対象にした`terraform-apply.yml`が起動していない(=applyが自動実行されていない)ことを確認する
-- [ ] 3.3 [ユーザー作業] 確認が取れたタスク3.1の試験PR(作成した場合)をクローズ/破棄する
+- [ ] 3.1 [ユーザー作業] PR #43(本change自体のPR、`terraform/bootstrap/main.tf`を変更しているため実地確認を兼ねる)で、タスク2.3の権限反映後に`plan-bootstrap` jobを再実行し、CI上で`terraform plan`が正常終了(`No changes`または想定通りの差分)し、PRにplan結果がコメントされることを確認する
+- [ ] 3.2 [ユーザー作業] 同じPR上で、`terraform-apply.yml`が起動していない(=applyが自動実行されていない)ことを確認する
