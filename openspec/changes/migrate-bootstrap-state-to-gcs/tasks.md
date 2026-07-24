@@ -1,9 +1,9 @@
 ## 1. コード変更(実装者が行う)
 
-- [ ] 1.1 `terraform/bootstrap/versions.tf`に`backend "gcs" { prefix = "bootstrap" }`を追加する(bucket名はハードコードせず、`terraform/main/versions.tf`と同じ部分設定パターンにする)
-- [ ] 1.2 `README.md`のセットアップ手順セクションを更新し、(a)既存環境向け: `-backend-config`を指定した`terraform init`手順、(b)真にゼロからの新規プロジェクト向け: 一時的なローカルbackendでの`apply`→`-migrate-state`手順、の両方を追記する
-- [ ] 1.3 `README.ja.md`に同内容を日本語で反映する
-- [ ] 1.4 追記した手順内のコマンド例(bucket名・prefix・出力名など)が実際のコード(`variables.tf`/`outputs.tf`/`versions.tf`)と整合していることをレビューする
+- [x] 1.1 `terraform/bootstrap/versions.tf`に`backend "gcs" { prefix = "bootstrap" }`を追加する(bucket名はハードコードせず、`terraform/main/versions.tf`と同じ部分設定パターンにする)
+- [x] 1.2 `README.md`のセットアップ手順セクションを更新し、(a)既存環境向け: `-backend-config`を指定した`terraform init`手順、(b)真にゼロからの新規プロジェクト向け: 一時的なローカルbackendでの`apply`→`-migrate-state`手順、の両方を追記する
+- [x] 1.3 `README.ja.md`に同内容を日本語で反映する
+- [x] 1.4 追記した手順内のコマンド例(bucket名・prefix・出力名など)が実際のコード(`variables.tf`/`outputs.tf`/`versions.tf`)と整合していることをレビューする
 
 ## 2. 既存環境(kuchida-devel)の移行 — [ユーザーが手動で実行する作業]
 

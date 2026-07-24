@@ -59,17 +59,36 @@ Terraformは`terraform/bootstrap`(1回だけ手動apply)と`terraform/main`(GitH
 
 ### 1. Bootstrap(手動・最初の1回だけ)
 
-`terraform/main`はGCSのリモートバックエンドとWorkload Identity Federation経由のGitHub Actions認証を前提にしているが、そのバケットとWIF Pool自体は「これから作る側」なので、ローカルから一度だけ手動で作成する。
+`terraform/main`はGCSのリモートバックエンドとWorkload Identity Federation経由のGitHub Actions認証を前提にしているが、そのバケットとWIF Pool自体は「これから作る側」なので、ローカルから一度だけ手動で作成する。`terraform/bootstrap`自身のstateも(`terraform/bootstrap/versions.tf`で設定した通り)ローカルファイルではなく同じバケット内の別prefix(`bootstrap`)に保管するため、最後にapplyしたマシンに依存せず、マシンを跨いでも紛失しない。
+
+**このプロジェクトに既にstateバケットが存在する場合**(既にbootstrap済みの環境に対して、IAM変更の反映などで再度applyする一般的なケース):
 
 ```bash
 cd terraform/bootstrap
-terraform init
+terraform init -backend-config="bucket=<既存のstateバケット名>"
 terraform apply \
   -var="project_id=<your-gcp-project-id>" \
   -var="github_repo=<your-github-username>/<your-repo-name>"  # must exactly match the GitHub repo, e.g. kuchida1981/n8n-ops
 ```
 
-apply完了後、以下のoutputを控える(次のGitHub Secrets登録で使う):
+**真にゼロから新規GCPプロジェクトで初めてbootstrapを実行する場合**(バケットがまだ存在せず、`terraform init`がbackendの向き先を持てない)は、代わりに一度きりの「ローカル実行→migrate」手順を踏む:
+
+```bash
+cd terraform/bootstrap
+
+# 1. versions.tf の `backend "gcs" { ... }` ブロックを一時的にコメントアウトし、
+#    この最初の1回だけローカルstateでバケット自体を作成する。
+terraform init
+terraform apply \
+  -var="project_id=<your-gcp-project-id>" \
+  -var="github_repo=<your-github-username>/<your-repo-name>"
+
+# 2. `backend "gcs" { ... }` ブロックを元に戻し、直前のapplyが作成した
+#    バケットへ、そのstateを移行する。
+terraform init -backend-config="bucket=$(terraform output -raw state_bucket)" -migrate-state
+```
+
+いずれの手順でも、apply完了後は以下のoutputを控える(次のGitHub Secrets登録で使う):
 
 ```bash
 terraform output
@@ -78,7 +97,7 @@ terraform output
 # terraform_ci_service_account_email
 ```
 
-**既存環境をアップデートする場合**: `terraform/bootstrap`はGitHub Actionsではなく手動apply専用のため、CI用サービスアカウントのIAM権限(例: `n8n-deploy.yml`用に追加した`roles/iap.tunnelResourceAccessor`・`roles/compute.osAdminLogin`)が変更されたときは、同じ`terraform apply`コマンドを再実行して反映させる必要がある。差分のみが適用され、既存リソースは壊れない。
+**既存環境をアップデートする場合**: `terraform/bootstrap`はGitHub Actionsではなく手動apply専用のため、CI用サービスアカウントのIAM権限(例: `n8n-deploy.yml`用に追加した`roles/iap.tunnelResourceAccessor`・`roles/compute.osAdminLogin`)が変更されたときは、同じ`terraform apply`コマンドを再実行して反映させる必要がある。差分のみが適用され、既存リソースは壊れない。stateはGCS上にあるため、どのマシンからでも`terraform init -backend-config="bucket=<state_bucket>"`でstateに再接続すればよく、最後にapplyしたマシンである必要はない。
 
 ### 2. Tailscale OAuthクライアントの発行(手動、またはvaultwarden-opsのものを再利用)
 
