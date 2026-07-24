@@ -69,7 +69,15 @@ jobs:
           TF_VAR_tailscale_tailnet: ${{ secrets.TAILSCALE_TAILNET }}
           TF_VAR_tailscale_oauth_client_id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           TF_VAR_tailscale_oauth_client_secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-        run: terraform plan -no-color -out=tfplan | tee plan.txt
+        # Plain `cmd | tee file` masks cmd's exit code with tee's (always 0),
+        # so a failed plan would still show this step - and the required
+        # check - as green. `set -o pipefail` makes the step fail when
+        # terraform does; `2>&1` also gets the actual error text into
+        # plan.txt so it shows up in the PR comment below instead of only
+        # in the Actions log.
+        run: |
+          set -o pipefail
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan.txt
 
       - name: Comment plan on PR
         if: steps.changes.outputs.relevant == 'true'
@@ -139,7 +147,9 @@ jobs:
         env:
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_github_repo: ${{ github.repository }}
-        run: terraform plan -no-color -out=tfplan | tee plan.txt
+        run: |
+          set -o pipefail
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan.txt
 
       - name: Comment plan on PR
         if: steps.changes.outputs.relevant == 'true'

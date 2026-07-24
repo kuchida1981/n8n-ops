@@ -78,6 +78,17 @@ resource "google_storage_bucket_iam_member" "terraform_ci_state_access" {
   member = "serviceAccount:${google_service_account.terraform_ci.email}"
 }
 
+# roles/storage.objectAdmin above is object-level only and does not include
+# storage.buckets.get - discovered when `terraform plan` for bootstrap
+# itself failed trying to refresh google_storage_bucket.tfstate (see Issue
+# #41). legacyBucketReader adds bucket-metadata read without granting any
+# write access.
+resource "google_storage_bucket_iam_member" "terraform_ci_state_bucket_reader" {
+  bucket = google_storage_bucket.tfstate.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.terraform_ci.email}"
+}
+
 # Broad-but-scoped project roles the CI service account needs to manage
 # the VM, disks, firewall, Secret Manager entries and the VM runtime SA.
 #
