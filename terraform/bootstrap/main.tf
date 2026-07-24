@@ -104,3 +104,25 @@ resource "google_project_iam_member" "terraform_ci_roles" {
   role    = each.value
   member  = "serviceAccount:${google_service_account.terraform_ci.email}"
 }
+
+# Read-only roles so CI can run `terraform plan` (refresh) against
+# terraform/bootstrap itself - see Issue #41. CI is intentionally never
+# granted write/admin access here: bootstrap creates this very service
+# account, the WIF pool it authenticates through, and its own project IAM
+# bindings, so an apply-capable CI identity could grant itself broader
+# permissions unsupervised. Plan-only needs read access to those same
+# resource types:
+#   - serviceUsageViewer: refresh google_project_service.required
+#   - iam.workloadIdentityPoolViewer: refresh the WIF pool/provider
+#   - iam.securityReviewer: refresh IAM policy bindings (project, service
+#     account, and bucket level) without granting the ability to change them
+resource "google_project_iam_member" "terraform_ci_readonly_roles" {
+  for_each = toset([
+    "roles/serviceusage.serviceUsageViewer",
+    "roles/iam.workloadIdentityPoolViewer",
+    "roles/iam.securityReviewer",
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.terraform_ci.email}"
+}

@@ -99,6 +99,8 @@ terraform output
 
 **Updating an existing environment**: Since `terraform/bootstrap` is manual-apply-only (not run by GitHub Actions), if the CI service account's IAM permissions change (e.g. `roles/iap.tunnelResourceAccessor` / `roles/compute.osAdminLogin` added for `n8n-deploy.yml`), you need to re-run the same `terraform apply` command to pick up the change. Only the diff is applied; existing resources are untouched. Because state now lives in GCS, this can be done from any machine — just run `terraform init -backend-config="bucket=<state_bucket>"` first to reconnect to the shared state; there's no need to be on the machine that last applied it.
 
+**Plan is automated, apply is not**: `.github/workflows/terraform-plan.yml` runs `terraform plan` against `terraform/bootstrap` for every PR (including Dependabot's weekly provider-version PRs) and comments the result, using the same read-only-capable CI service account as `terraform/main`. `terraform-apply.yml` deliberately does **not** cover `terraform/bootstrap`: this directory creates the CI service account itself, its Workload Identity Federation pool, and its own project IAM bindings, so letting CI apply it would let that identity grant itself broader permissions unsupervised. Reviewing the CI-posted plan and then running `terraform apply` by hand (as above) remains the only way changes to `terraform/bootstrap` take effect.
+
 ### 2. Issue a Tailscale OAuth client (manual, or reuse vaultwarden-ops')
 
 If you've already issued an OAuth client for the Terraform provider in vaultwarden-ops (with Policy File + Auth Keys scopes), you can reuse it as-is. If you need to issue a new one, follow the steps in vaultwarden-ops' README under "2. Issue a Tailscale OAuth client," additionally selecting `tag:n8n-server` for the Auth Keys tag.
@@ -171,5 +173,5 @@ After rollout, confirm workflows are actually running on the new n8n version (in
 terraform/bootstrap/  … manual, apply once. GCS state bucket, WIF Pool, CI service account
 terraform/main/       … applied continuously by GitHub Actions. VM/FW/Disk/Secret Manager/Tailscale auth key (the ACL policy itself is solely owned by vaultwarden-ops)
 n8n/                   … docker-compose.yml (Traefik + n8n)
-.github/workflows/     … terraform plan (PR) / apply (main, approval-gated) / n8n-deploy (changes under n8n/, approval-gated)
+.github/workflows/     … terraform plan (PR, covers both terraform/main and terraform/bootstrap) / apply (main, approval-gated, terraform/main only) / n8n-deploy (changes under n8n/, approval-gated)
 ```

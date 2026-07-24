@@ -1,11 +1,11 @@
 ## 1. コード変更(実装者が行う)
 
-- [ ] 1.1 `terraform/bootstrap/main.tf`の`terraform_ci_roles`(または専用リソース)に、`google_project_service.required`・WIF Pool/Provider・project IAMポリシーを読み取るための最小限のViewer系ロールを追加する
-- [ ] 1.2 `.github/workflows/terraform-plan.yml`に、`terraform/bootstrap`専用のjob(またはstep群)を追加する。既存の`terraform/main`用jobは変更しない。dependabotのactor判定(`pull_request`/`pull_request_target`)は既存jobと同じパターンを踏襲する
-- [ ] 1.3 追加したbootstrap用jobのrelevance-check(diff対象パス)が`terraform/bootstrap`と自身のワークフローファイルのみを見ており、`terraform/main`用jobのrelevance-checkと独立していることを確認する
-- [ ] 1.4 bootstrap用jobの`terraform init`が、`terraform/main`用jobと同じ`TF_STATE_BUCKET`シークレットを`-backend-config`で使うようにする(bootstrap用の変数は`project_id`・`github_repo`のみで、tailscale系変数は不要であることを確認する)
-- [ ] 1.5 README.md/README.ja.mdに、`terraform/bootstrap`はplanのみCI化されapplyは引き続き手動である旨を追記する
-- [ ] 1.6 `terraform fmt -check`・`terraform validate`(backend未接続)でbootstrapの構文を確認する
+- [x] 1.1 `terraform/bootstrap/main.tf`の`terraform_ci_roles`(または専用リソース)に、`google_project_service.required`・WIF Pool/Provider・project IAMポリシーを読み取るための最小限のViewer系ロールを追加する
+- [x] 1.2 `.github/workflows/terraform-plan.yml`に、`terraform/bootstrap`専用のjob(またはstep群)を追加する。既存の`terraform/main`用jobは変更しない。dependabotのactor判定(`pull_request`/`pull_request_target`)は既存jobと同じパターンを踏襲する
+- [x] 1.3 追加したbootstrap用jobのrelevance-check(diff対象パス)が`terraform/bootstrap`と自身のワークフローファイルのみを見ており、`terraform/main`用jobのrelevance-checkと独立していることを確認する
+- [x] 1.4 bootstrap用jobの`terraform init`が、`terraform/main`用jobと同じ`TF_STATE_BUCKET`シークレットを`-backend-config`で使うようにする(bootstrap用の変数は`project_id`・`github_repo`のみで、tailscale系変数は不要であることを確認する)
+- [x] 1.5 README.md/README.ja.mdに、`terraform/bootstrap`はplanのみCI化されapplyは引き続き手動である旨を追記する
+- [x] 1.6 `terraform fmt -check`・`terraform validate`(backend未接続)でbootstrapの構文を確認する
 
 ## 2. 権限反映 — [ユーザーが手動で実行する作業]
 
