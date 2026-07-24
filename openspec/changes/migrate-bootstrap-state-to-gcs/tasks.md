@@ -9,10 +9,10 @@
 
 **注意**: この節の作業は認証情報を伴う破壊的になりうる操作のため、実装者(Claude)は実行せず、ユーザー自身が手元のマシンで実行する。
 
-- [ ] 2.1 [ユーザー作業] `terraform/bootstrap`ディレクトリの現在のローカルstate(`terraform.tfstate`・`terraform.tfstate.backup`)を、リポジトリ外の安全な場所にバックアップする
-- [ ] 2.2 [ユーザー作業] `terraform output state_bucket`で移行先バケット名を確認する
-- [ ] 2.3 [ユーザー作業] タスク1.1のコード変更を取り込んだ上で、`terraform init -backend-config="bucket=<state_bucket出力値>" -migrate-state`を実行し、ローカルstateをGCS(`bootstrap/`prefix)へ移行する
-- [ ] 2.4 [ユーザー作業] 移行直後に同一マシンで`terraform plan`を実行し、差分が0件(No changes)であることを確認する
+- [x] 2.1 [ユーザー作業] `terraform/bootstrap`ディレクトリの現在のローカルstate(`terraform.tfstate`・`terraform.tfstate.backup`)を、リポジトリ外の安全な場所にバックアップする
+- [x] 2.2 [ユーザー作業] `terraform output state_bucket`で移行先バケット名を確認する(実際にはbackend未初期化のためローカルstateファイルから直接`kuchida-devel-n8n-tfstate`を確認)
+- [x] 2.3 [ユーザー作業] タスク1.1のコード変更を取り込んだ上で、`terraform init -backend-config="bucket=<state_bucket出力値>" -migrate-state`を実行し、ローカルstateをGCS(`bootstrap/`prefix)へ移行する
+- [x] 2.4 [ユーザー作業] 移行直後に同一マシンで`terraform plan`を実行し、差分が0件(No changes)であることを確認する
 - [ ] 2.5 [ユーザー作業] 別マシン(または別の作業ディレクトリにクローンした同一リポジトリ)から、タスク2.3と同じ`-backend-config`で`terraform init`→`terraform plan`を実行し、ローカルstate不在に起因する誤差分が出ないことを確認する
 - [ ] 2.6 [ユーザー作業] 移行完了後、バックアップ済みのローカルstateファイルは誤って再利用されないよう、作業ディレクトリから削除するか隔離する(gitignore対象のため誤コミットのリスクはないが、混乱防止のため)
 
