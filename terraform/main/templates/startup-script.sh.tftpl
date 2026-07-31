@@ -76,6 +76,14 @@ elif [ "$DAEMON_JSON_CHANGED" = "1" ]; then
   systemctl restart docker
 fi
 
+# --- google cloud ops agent (memory/disk/process metrics; CPU and network
+# already come from the Compute Engine API itself and don't need this) ---
+if ! systemctl is-enabled --quiet google-cloud-ops-agent.target 2>/dev/null; then
+  curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+  bash add-google-cloud-ops-agent-repo.sh --also-install
+  rm -f add-google-cloud-ops-agent-repo.sh
+fi
+
 # --- tailscale (idempotent: only join if not already up) ---
 if ! command -v tailscale >/dev/null 2>&1; then
   curl -fsSL https://tailscale.com/install.sh | sh
