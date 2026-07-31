@@ -57,4 +57,8 @@ resource "google_compute_address" "n8n" {
   name    = "n8n-static-ip"
   project = var.project_id
   region  = var.region
+
+  labels = {
+    app = "n8n"
+  }
 }
