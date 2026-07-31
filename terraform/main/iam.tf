@@ -8,6 +8,12 @@ resource "google_service_account" "vm_runtime" {
   display_name = "n8n VM runtime"
 }
 
+# roles/monitoring.metricWriter and roles/logging.logWriter for this SA
+# (letting the Ops Agent in startup-script.sh.tftpl report memory/disk/
+# process metrics and logs) are granted in terraform/bootstrap, not here -
+# see the comment there for why: setting project-level IAM policy is
+# something CI's terraform-ci identity is intentionally never permitted to
+# do itself.
 resource "google_secret_manager_secret_iam_member" "tailscale_authkey_access" {
   project   = var.project_id
   secret_id = google_secret_manager_secret.tailscale_authkey.secret_id
