@@ -19,6 +19,10 @@ resource "google_compute_disk" "n8n_data" {
   type = "pd-balanced"
   size = 10
 
+  labels = {
+    app = "n8n"
+  }
+
   lifecycle {
     prevent_destroy = true
   }
