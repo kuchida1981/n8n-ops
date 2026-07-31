@@ -44,3 +44,23 @@ jobs:
           TF_VAR_tailscale_oauth_client_id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           TF_VAR_tailscale_oauth_client_secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
         run: terraform apply -no-color -auto-approve
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      # `metadata` (including startup-script) updates apply live to a
+      # running instance, but the guest only *re-runs* startup-script on
+      # boot - so a startup-script change alone would silently do nothing
+      # until someone reboots the VM by hand. Re-running it here instead,
+      # over the same IAP-tunneled SSH path n8n-deploy.yml already uses,
+      # converges the guest to match every apply without a reboot or a
+      # human ever needing to SSH in themselves. Unconditional (not gated
+      # on whether startup-script actually changed) because every step in
+      # it is already idempotent - see startup-script.sh.tftpl.
+      - name: Re-apply startup-script on the VM
+        run: |
+          gcloud compute ssh n8n \
+            --project="${{ secrets.GCP_PROJECT_ID }}" \
+            --zone=us-west1-b \
+            --tunnel-through-iap \
+            --quiet \
+            --command='sudo google_metadata_script_runner startup'
