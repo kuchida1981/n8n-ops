@@ -76,6 +76,36 @@ elif [ "$DAEMON_JSON_CHANGED" = "1" ]; then
   systemctl restart docker
 fi
 
+# --- containerd: image/layer storage also lives on the attached data disk ---
+# Docker's own `data-root` above does NOT cover the system containerd.io
+# service - its config.toml ships with `root` commented out, defaulting to
+# /var/lib/containerd on the boot disk. That's where image layers are
+# actually extracted, so the boot disk was filling up (and failing deploys
+# with "no space left on device") on every dependabot image bump even
+# though /opt/n8n/docker-data had plenty of room.
+CONTAINERD_ROOT=/opt/n8n/docker-data/containerd
+CONTAINERD_CONFIG_CHANGED=0
+if [ "$(cat /etc/containerd/config.toml 2>/dev/null)" != "disabled_plugins = [\"cri\"]
+root = \"$CONTAINERD_ROOT\"" ]; then
+  mkdir -p /etc/containerd
+  cat >/etc/containerd/config.toml <<EOF
+disabled_plugins = ["cri"]
+root = "$CONTAINERD_ROOT"
+EOF
+  CONTAINERD_CONFIG_CHANGED=1
+fi
+
+if [ "$CONTAINERD_CONFIG_CHANGED" = "1" ]; then
+  systemctl stop containerd
+  if [ -d /var/lib/containerd ] && [ ! -d "$CONTAINERD_ROOT" ]; then
+    mkdir -p "$CONTAINERD_ROOT"
+    rsync -a /var/lib/containerd/ "$CONTAINERD_ROOT/"
+    rm -rf /var/lib/containerd
+  fi
+  systemctl start containerd
+  systemctl restart docker
+fi
+
 # --- google cloud ops agent (memory/disk/process metrics; CPU and network
 # already come from the Compute Engine API itself and don't need this) ---
 if ! systemctl is-enabled --quiet google-cloud-ops-agent.target 2>/dev/null; then
