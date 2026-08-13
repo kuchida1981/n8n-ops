@@ -36,27 +36,54 @@ jobs:
       - name: Terraform Init
         run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
 
-      - name: Terraform Apply
+      - name: Terraform Plan
         env:
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_github_repo: ${{ github.repository }}
           TF_VAR_tailscale_tailnet: ${{ secrets.TAILSCALE_TAILNET }}
           TF_VAR_tailscale_oauth_client_id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           TF_VAR_tailscale_oauth_client_secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-        run: terraform apply -no-color -auto-approve
-
-      - uses: google-github-actions/setup-gcloud@v3
+        run: terraform plan -no-color -out=tfplan
 
       # `metadata` (including startup-script) updates apply live to a
       # running instance, but the guest only *re-runs* startup-script on
       # boot - so a startup-script change alone would silently do nothing
-      # until someone reboots the VM by hand. Re-running it here instead,
-      # over the same IAP-tunneled SSH path n8n-deploy.yml already uses,
-      # converges the guest to match every apply without a reboot or a
-      # human ever needing to SSH in themselves. Unconditional (not gated
-      # on whether startup-script actually changed) because every step in
-      # it is already idempotent - see startup-script.sh.tftpl.
+      # until someone reboots the VM by hand. Re-running it below, over the
+      # same IAP-tunneled SSH path n8n-deploy.yml already uses, converges
+      # the guest without a reboot or a human ever needing to SSH in
+      # themselves.
+      #
+      # Only google_compute_instance.n8n's metadata.startup-script attribute
+      # actually needs that re-run - most terraform/main/** applies (IAM,
+      # network, disk sizing, ...) never touch it. Diffing this plan's JSON
+      # for that one attribute (rather than checking which files changed)
+      # catches every way it can change, including a template *variable*
+      # (e.g. var.domain) being edited without templates/startup-script.sh.tftpl
+      # itself changing.
+      - name: Check whether the rendered startup-script changed
+        id: startup-script-diff
+        run: |
+          terraform show -json tfplan > tfplan.json
+          changed=$(jq -r '
+            [ .resource_changes[]?
+              | select(.address == "google_compute_instance.n8n")
+              | select((.change.before.metadata["startup-script"] // "")
+                        != (.change.after.metadata["startup-script"] // ""))
+            ] | length > 0
+          ' tfplan.json)
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform Apply
+        run: terraform apply -no-color tfplan
+
+      - uses: google-github-actions/setup-gcloud@v3
+        if: steps.startup-script-diff.outputs.changed == 'true'
+
+      # Unconditional *within* this step (not gated on which part of the
+      # startup-script changed) because every step inside it is already
+      # idempotent - see startup-script.sh.tftpl.
       - name: Re-apply startup-script on the VM
+        if: steps.startup-script-diff.outputs.changed == 'true'
         run: |
           gcloud compute ssh n8n \
             --project="${{ secrets.GCP_PROJECT_ID }}" \
