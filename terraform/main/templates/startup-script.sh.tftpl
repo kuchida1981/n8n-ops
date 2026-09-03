@@ -2,6 +2,11 @@
 set -euxo pipefail
 
 PROJECT_ID="${project_id}"
+# DOMAIN is used below via $${DOMAIN...} - the doubled $$ is Terraform
+# templatefile() escaping for a literal `$`, which shellcheck (reading the
+# raw .tftpl source, not the rendered script) can't follow back to this
+# assignment.
+# shellcheck disable=SC2034
 DOMAIN="${domain}"
 SSL_EMAIL="${ssl_email}"
 GENERIC_TIMEZONE="${generic_timezone}"
