@@ -19,6 +19,11 @@ jobs:
     # That's what actually pauses this job for manual approval - it cannot
     # be expressed in workflow YAML alone.
     environment: production
+    # Same group as terraform-plan.yml's "plan" job: both act on the
+    # terraform/main GCS state, so this queues behind (or ahead of) any
+    # in-flight plan instead of racing it for the same state lock.
+    concurrency:
+      group: tfstate-main
     defaults:
       run:
         working-directory: terraform/main

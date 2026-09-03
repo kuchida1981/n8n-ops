@@ -23,6 +23,35 @@ jobs:
       (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
       (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
+    # Same group as terraform-apply.yml's "apply" job: both act on the
+    # terraform/main GCS state, and without this, concurrent runs (e.g.
+    # several dependabot PRs landing at once, or a plan racing an apply)
+    # fight over the same state lock and fail with "Error acquiring the
+    # state lock" instead of the real plan/apply result. cancel-in-progress
+    # is left false (the default) so runs queue instead of one canceling
+    # another - "plan" is a required check and must always finish.
+    #
+    # The group is only "tfstate-main" when this job's own `if` above will
+    # actually let it run terraform. Every dependabot PR fires both
+    # `pull_request` and `pull_request_target`, and the one that the `if`
+    # will skip still claims a concurrency slot before that condition is
+    # evaluated - GitHub's queue treats the newer request as higher
+    # priority and cancels the older, currently-running "real" plan instead
+    # of just queuing behind it, even with cancel-in-progress: false. Giving
+    # the always-skipped run its own per-run group keeps it out of
+    # "tfstate-main" entirely, so it can no longer preempt a real plan.
+    concurrency:
+      group: |-
+        ${{
+          ((github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
+           (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]'))
+          && 'tfstate-main'
+          || format('tfstate-main-noop-{0}', github.run_id)
+        }}
+    # Feeds the auto-merge job below: no terraform/main changes in this PR
+    # is just as safe as a plan that ran and found nothing to change.
+    outputs:
+      no_changes: ${{ steps.changes.outputs.relevant != 'true' || steps.plan.outputs.no_changes == 'true' }}
     defaults:
       run:
         working-directory: terraform/main
@@ -63,6 +92,7 @@ jobs:
 
       - name: Terraform Plan
         if: steps.changes.outputs.relevant == 'true'
+        id: plan
         env:
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_github_repo: ${{ github.repository }}
@@ -74,10 +104,23 @@ jobs:
         # check - as green. `set -o pipefail` makes the step fail when
         # terraform does; `2>&1` also gets the actual error text into
         # plan.txt so it shows up in the PR comment below instead of only
-        # in the Actions log.
+        # in the Actions log. `-detailed-exitcode` distinguishes a clean
+        # "nothing to change" (0) from "changes present" (2) from a real
+        # error (1), which the auto-merge job below relies on; the `if`
+        # around it is needed because the runner's default `-eo pipefail`
+        # shell would otherwise abort the step the instant terraform exits
+        # 2, before we get to inspect that exit code ourselves.
         run: |
           set -o pipefail
-          terraform plan -no-color -out=tfplan 2>&1 | tee plan.txt
+          if terraform plan -no-color -detailed-exitcode -out=tfplan 2>&1 | tee plan.txt; then
+            plan_exit=0
+          else
+            plan_exit=$?
+          fi
+          if [ "$plan_exit" -eq 1 ]; then
+            exit 1
+          fi
+          echo "no_changes=$([ "$plan_exit" -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Comment plan on PR
         if: steps.changes.outputs.relevant == 'true'
@@ -87,13 +130,34 @@ jobs:
             const fs = require('fs');
             const plan = fs.readFileSync('terraform/main/plan.txt', 'utf8');
             const maxLen = 60000;
-            const body = `### Terraform Plan\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan.slice(0, maxLen)}\n\`\`\`\n\n</details>`;
-            github.rest.issues.createComment({
+            const noChanges = '${{ steps.plan.outputs.no_changes }}' === 'true';
+            const status = noChanges ? '✅ No changes' : '🔧 Changes detected';
+            // Marker identifies this job's comment so re-runs (new pushes to
+            // the same PR) update it in place instead of piling up a fresh
+            // comment every time.
+            const marker = '<!-- terraform-plan: main -->';
+            const body = `${marker}\n### Terraform Plan — ${status}\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan.slice(0, maxLen)}\n\`\`\`\n\n</details>`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body,
             });
+            const existing = comments.find((c) => c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                comment_id: existing.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            }
 
   # terraform/bootstrap gets its own job (not a matrix entry alongside
   # "plan" above) because it needs a different variable set - no Tailscale
@@ -105,6 +169,23 @@ jobs:
       (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
       (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
+    # Serializes concurrent runs against the terraform/bootstrap GCS state
+    # (e.g. several dependabot PRs landing at once) - see the "plan" job's
+    # concurrency comment above for why this is needed, and why the group
+    # is only "tfstate-bootstrap" when this job's own `if` above will
+    # actually let it run terraform.
+    concurrency:
+      group: |-
+        ${{
+          ((github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
+           (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]'))
+          && 'tfstate-bootstrap'
+          || format('tfstate-bootstrap-noop-{0}', github.run_id)
+        }}
+    # Feeds the auto-merge job below: no terraform/bootstrap changes in this
+    # PR is just as safe as a plan that ran and found nothing to change.
+    outputs:
+      no_changes: ${{ steps.changes.outputs.relevant != 'true' || steps.plan.outputs.no_changes == 'true' }}
     defaults:
       run:
         working-directory: terraform/bootstrap
@@ -144,12 +225,23 @@ jobs:
 
       - name: Terraform Plan
         if: steps.changes.outputs.relevant == 'true'
+        id: plan
         env:
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_github_repo: ${{ github.repository }}
+        # See the "plan" job's Terraform Plan step above for why this is
+        # wrapped in `if` and what -detailed-exitcode buys us.
         run: |
           set -o pipefail
-          terraform plan -no-color -out=tfplan 2>&1 | tee plan.txt
+          if terraform plan -no-color -detailed-exitcode -out=tfplan 2>&1 | tee plan.txt; then
+            plan_exit=0
+          else
+            plan_exit=$?
+          fi
+          if [ "$plan_exit" -eq 1 ]; then
+            exit 1
+          fi
+          echo "no_changes=$([ "$plan_exit" -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Comment plan on PR
         if: steps.changes.outputs.relevant == 'true'
@@ -159,10 +251,63 @@ jobs:
             const fs = require('fs');
             const plan = fs.readFileSync('terraform/bootstrap/plan.txt', 'utf8');
             const maxLen = 60000;
-            const body = `### Terraform Plan (bootstrap)\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan.slice(0, maxLen)}\n\`\`\`\n\n</details>`;
-            github.rest.issues.createComment({
+            const noChanges = '${{ steps.plan.outputs.no_changes }}' === 'true';
+            const status = noChanges ? '✅ No changes' : '🔧 Changes detected';
+            // Marker identifies this job's comment so re-runs (new pushes to
+            // the same PR) update it in place instead of piling up a fresh
+            // comment every time.
+            const marker = '<!-- terraform-plan: bootstrap -->';
+            const body = `${marker}\n### Terraform Plan (bootstrap) — ${status}\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan.slice(0, maxLen)}\n\`\`\`\n\n</details>`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body,
             });
+            const existing = comments.find((c) => c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                comment_id: existing.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            }
+
+  # Auto-merges dependabot's own terraform PRs once both plans confirm the
+  # bump doesn't change anything - patch/minor only. A "no changes" plan
+  # only proves *today's* code is unaffected; it says nothing about
+  # provider deprecations or behavior changes that would only surface on
+  # some future apply, so major bumps always go to a human.
+  auto-merge:
+    needs: [plan, plan-bootstrap]
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Enable auto-merge
+        if: |
+          steps.metadata.outputs.package-ecosystem == 'terraform' &&
+          steps.metadata.outputs.update-type != 'version-update:semver-major' &&
+          needs.plan.outputs.no_changes == 'true' &&
+          needs.plan-bootstrap.outputs.no_changes == 'true'
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
