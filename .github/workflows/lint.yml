@@ -1,0 +1,71 @@
+name: Lint
+
+# Deliberately just `pull_request` (not the `pull_request_target` split that
+# terraform-plan.yml needs): none of the jobs below touch GCP or any
+# repository secret, so there is nothing that requires elevating
+# Dependabot's trigger permissions. Every PR - human or bot - takes the same
+# path. No path filtering either: unlike terraform-plan.yml's GCP-backed
+# `plan` (expensive enough to justify skipping when irrelevant), these
+# checks are cheap and secret-free, so they just always run.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # terraform validate never touches the GCS backend: `-backend=false` skips
+  # backend initialization entirely, so this needs no GCP auth. (Running the
+  # same command against a *locally* already-initialized terraform/main or
+  # terraform/bootstrap directory - i.e. not in CI - can still prompt for
+  # GCP auth, because it detects a backend config change from the real GCS
+  # backend already selected there; that's a local-reproduction quirk only,
+  # not a CI concern, since CI always starts from a clean checkout.)
+  terraform-validate:
+    strategy:
+      matrix:
+        dir: [terraform/main, terraform/bootstrap]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  # Default core ruleset only (no google-provider plugin) - verified clean
+  # against both directories as-is, and a provider-specific ruleset can be
+  # added later if a real gap shows up.
+  tflint:
+    strategy:
+      matrix:
+        dir: [terraform/main, terraform/bootstrap]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: terraform-linters/setup-tflint@v6
+      - run: tflint
+
+  # shellcheck ships preinstalled on GitHub-hosted ubuntu-latest runners, so
+  # no extra action/install step is needed.
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck startup-script.sh.tftpl
+        # SC2154 excluded: the file's top-of-script assignments (e.g.
+        # PROJECT_ID="${project_id}") are Terraform ${var} interpolations
+        # filled in before the script ever runs as bash - shellcheck can't
+        # know that and reports each as an "undefined" bash variable.
+        # SC1091 excluded: `$(. /etc/os-release && ...)` sources a file that
+        # only exists on the target VM at runtime; shellcheck has no way to
+        # follow it in CI. Both are scoped to this one file, not a repo-wide
+        # .shellcheckrc, since they're specific to this file being a
+        # Terraform template rather than plain bash.
+        run: |
+          shellcheck --exclude=SC2154,SC1091 terraform/main/templates/startup-script.sh.tftpl
