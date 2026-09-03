@@ -43,7 +43,7 @@ services:
     # schema requires `username`/`password` for any non-Docker-Hub
     # hostname even when the registry allows anonymous pulls, which would
     # mean carrying a credential that authenticates nothing.
-    image: n8nio/n8n:2.36.5
+    image: n8nio/n8n:2.37.7
     restart: always
     ports:
       - "127.0.0.1:5678:5678"
