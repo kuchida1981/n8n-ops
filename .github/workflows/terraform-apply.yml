@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "terraform/main/**"
+      - "terraform/main/.terraform.lock.hcl"
       - ".github/workflows/terraform-apply.yml"
 
 permissions:
