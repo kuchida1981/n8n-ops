@@ -20,9 +20,13 @@ jobs:
     # That's what actually pauses this job for manual approval - it cannot
     # be expressed in workflow YAML alone.
     environment: production
-    # Same group as terraform-plan.yml's "plan" job: both act on the
-    # terraform/main GCS state, so this queues behind (or ahead of) any
-    # in-flight plan instead of racing it for the same state lock.
+    # No longer shared with terraform-plan.yml's "plan" job - that job now
+    # uses a per-PR concurrency group instead of this repo-wide one (see its
+    # comment for why: a shared group let one dependabot PR's queued plan
+    # evict another's). This group now only serializes "apply" against
+    # itself (e.g. two merges to main landing close together). Mutual
+    # exclusion against a concurrent "plan" job's GCS state lock is handled
+    # by `-lock-timeout` below instead.
     concurrency:
       group: tfstate-main
     defaults:
@@ -49,7 +53,10 @@ jobs:
           TF_VAR_tailscale_tailnet: ${{ secrets.TAILSCALE_TAILNET }}
           TF_VAR_tailscale_oauth_client_id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           TF_VAR_tailscale_oauth_client_secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-        run: terraform plan -no-color -out=tfplan
+        # `-lock-timeout` waits out a GCS state lock briefly held by a
+        # concurrent PR's `terraform plan` (terraform-plan.yml) instead of
+        # failing immediately - see this job's concurrency comment above.
+        run: terraform plan -no-color -lock-timeout=5m -out=tfplan
 
       # `metadata` (including startup-script) updates apply live to a
       # running instance, but the guest only *re-runs* startup-script on
@@ -80,7 +87,7 @@ jobs:
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
 
       - name: Terraform Apply
-        run: terraform apply -no-color tfplan
+        run: terraform apply -no-color -lock-timeout=5m tfplan
 
       - uses: google-github-actions/setup-gcloud@v3
         if: steps.startup-script-diff.outputs.changed == 'true'
