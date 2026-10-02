@@ -18,7 +18,7 @@ flowchart TB
     internet["Internet (anyone)"]
     admin["Administrator"]
 
-    subgraph vm["GCE VM (e2-micro) — us-west1-b, Debian 13"]
+    subgraph vm["GCE VM (e2-small) — us-west1-b, Debian 13"]
         traefik["Traefik (TLS-ALPN-01)"]
         n8n["n8n:5678"]
         disk[("Dedicated Persistent Disk
