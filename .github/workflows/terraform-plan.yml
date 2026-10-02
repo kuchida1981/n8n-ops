@@ -23,29 +23,37 @@ jobs:
       (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
       (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
-    # Same group as terraform-apply.yml's "apply" job: both act on the
-    # terraform/main GCS state, and without this, concurrent runs (e.g.
-    # several dependabot PRs landing at once, or a plan racing an apply)
-    # fight over the same state lock and fail with "Error acquiring the
-    # state lock" instead of the real plan/apply result. cancel-in-progress
-    # is left false (the default) so runs queue instead of one canceling
-    # another - "plan" is a required check and must always finish.
+    # Scoped per-PR (not a single repo-wide "tfstate-main") so that two
+    # different dependabot PRs opened close together - dependabot's normal
+    # batch behavior - don't contend for the same slot. GitHub Actions
+    # concurrency groups only hold one *queued* run at a time; if a second
+    # PR's plan is queued while a first PR's plan is still queued (not yet
+    # running), the newer one evicts the older rather than waiting behind
+    # it, even with cancel-in-progress: false - that only protects a
+    # *running* job, not a queued one. That eviction is what broke PR #77
+    # (see incident writeup in PR history): its plan was canceled with
+    # "Canceling since a higher priority waiting request for tfstate-main
+    # exists" the moment PR #78's plan was queued seconds later.
     #
-    # The group is only "tfstate-main" when this job's own `if` above will
-    # actually let it run terraform. Every dependabot PR fires both
-    # `pull_request` and `pull_request_target`, and the one that the `if`
-    # will skip still claims a concurrency slot before that condition is
-    # evaluated - GitHub's queue treats the newer request as higher
-    # priority and cancels the older, currently-running "real" plan instead
-    # of just queuing behind it, even with cancel-in-progress: false. Giving
-    # the always-skipped run its own per-run group keeps it out of
-    # "tfstate-main" entirely, so it can no longer preempt a real plan.
+    # Actual mutual exclusion against the real resource - the GCS state
+    # lock, including races with terraform-apply.yml's "apply" job - is now
+    # handled by `-lock-timeout` on the `terraform plan` call below instead
+    # of by this concurrency group: if the lock is briefly held elsewhere,
+    # this just waits for it rather than erroring out.
+    #
+    # The group is only "tfstate-main-pr-<PR#>" when this job's own `if`
+    # above will actually let it run terraform. Every dependabot PR fires
+    # both `pull_request` and `pull_request_target`, and the one that the
+    # `if` will skip still claims a concurrency slot before that condition
+    # is evaluated, which would otherwise let the always-skipped sibling
+    # preempt the real run for the same PR. Giving it its own per-run group
+    # keeps it out of the PR's real group entirely.
     concurrency:
       group: |-
         ${{
           ((github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
            (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]'))
-          && 'tfstate-main'
+          && format('tfstate-main-pr-{0}', github.event.pull_request.number)
           || format('tfstate-main-noop-{0}', github.run_id)
         }}
     # Feeds the auto-merge job below: no terraform/main changes in this PR
@@ -109,10 +117,14 @@ jobs:
         # error (1), which the auto-merge job below relies on; the `if`
         # around it is needed because the runner's default `-eo pipefail`
         # shell would otherwise abort the step the instant terraform exits
-        # 2, before we get to inspect that exit code ourselves.
+        # 2, before we get to inspect that exit code ourselves. `-lock-timeout`
+        # waits out a GCS state lock briefly held by another PR's plan or by
+        # terraform-apply.yml's "apply" job instead of failing immediately -
+        # see this job's concurrency comment above for why that replaced a
+        # GitHub Actions concurrency group as the mutual-exclusion mechanism.
         run: |
           set -o pipefail
-          if terraform plan -no-color -detailed-exitcode -out=tfplan 2>&1 | tee plan.txt; then
+          if terraform plan -no-color -lock-timeout=5m -detailed-exitcode -out=tfplan 2>&1 | tee plan.txt; then
             plan_exit=0
           else
             plan_exit=$?
@@ -169,17 +181,17 @@ jobs:
       (github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
       (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
-    # Serializes concurrent runs against the terraform/bootstrap GCS state
-    # (e.g. several dependabot PRs landing at once) - see the "plan" job's
-    # concurrency comment above for why this is needed, and why the group
-    # is only "tfstate-bootstrap" when this job's own `if` above will
-    # actually let it run terraform.
+    # Scoped per-PR, same rationale as the "plan" job's concurrency comment
+    # above: a repo-wide "tfstate-bootstrap" group let one dependabot PR's
+    # queued plan evict another's when both were opened close together.
+    # Real mutual exclusion against the GCS state lock is now `-lock-timeout`
+    # on the `terraform plan` call below.
     concurrency:
       group: |-
         ${{
           ((github.event_name == 'pull_request' && github.actor != 'dependabot[bot]') ||
            (github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]'))
-          && 'tfstate-bootstrap'
+          && format('tfstate-bootstrap-pr-{0}', github.event.pull_request.number)
           || format('tfstate-bootstrap-noop-{0}', github.run_id)
         }}
     # Feeds the auto-merge job below: no terraform/bootstrap changes in this
@@ -230,10 +242,11 @@ jobs:
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_github_repo: ${{ github.repository }}
         # See the "plan" job's Terraform Plan step above for why this is
-        # wrapped in `if` and what -detailed-exitcode buys us.
+        # wrapped in `if`, what -detailed-exitcode buys us, and why
+        # -lock-timeout replaced a concurrency group for state-lock safety.
         run: |
           set -o pipefail
-          if terraform plan -no-color -detailed-exitcode -out=tfplan 2>&1 | tee plan.txt; then
+          if terraform plan -no-color -lock-timeout=5m -detailed-exitcode -out=tfplan 2>&1 | tee plan.txt; then
             plan_exit=0
           else
             plan_exit=$?
