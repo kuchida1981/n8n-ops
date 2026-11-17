@@ -1,9 +1,17 @@
 resource "google_compute_instance" "n8n" {
-  name         = "n8n"
-  project      = var.project_id
-  zone         = var.zone
-  machine_type = "e2-micro"
+  name    = "n8n"
+  project = var.project_id
+  zone    = var.zone
+
+  # e2-micro (1GB) thrashed swap on n8n 2.41.x (iowait ~78%, DB pings timing
+  # out), so this is e2-small (2GB). Reverting to e2-micro is the same
+  # one-line change; the data disk is independent of the VM so nothing is lost.
+  machine_type = "e2-small"
   tags         = ["n8n-server"]
+
+  # Changing machine_type requires stopping the VM; without this the provider
+  # refuses to apply the change to a running instance.
+  allow_stopping_for_update = true
 
   # Lets Billing Reports be grouped by label to see n8n's compute cost
   # separately from vaultwarden's, since both VMs live in the same project.
