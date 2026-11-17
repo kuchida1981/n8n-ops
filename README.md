@@ -47,7 +47,7 @@ Because both projects share the same tailnet and the same GCP project (`kuchida-
 - **Region**: vaultwarden runs in asia-northeast1, but n8n stays in us-west1. The GCE always-free e2-micro tier is limited to us-west1/us-central1/us-east1, so this constraint is preserved as-is
 - **Reverse proxy**: vaultwarden uses Caddy, but n8n uses Traefik (to stay close to n8n's official sample configuration)
 - **Data persistence implementation**: vaultwarden rewrites `docker-compose.yml` to use bind mounts, while n8n keeps the named-volume structure unchanged and instead points Docker's `data-root` itself at the dedicated disk (see the comments in `n8n/docker-compose.yml` and `terraform/main/disk.tf` for the reasoning)
-- **Tailscale ACL**: the `tailscale_acl` resource overwrites the entire tailnet policy as a single resource, so if two independent Terraform states both held it, whichever applied last would wipe out the other's config. To structurally prevent that, **vaultwarden-ops' `terraform/main/tailscale.tf` is the sole owner of the ACL policy, and n8n-ops does not hold a `tailscale_acl` resource at all** (the `tag:n8n-server` tagOwners and SSH rules are also managed on the vaultwarden-ops side). n8n-ops only manages the `tailscale_tailnet_key` (auth key). When adding a new service to the tailnet, add its tag to vaultwarden-ops' `tailscale.tf`, not to the new service's own repo
+- **Tailscale ACL**: the `tailscale_acl` resource overwrites the entire tailnet policy as a single resource, so if two independent Terraform states both held it, whichever applied last would wipe out the other's config. To structurally prevent that, **u-rei-infra's `terraform/tailscale` is the sole owner of the ACL policy, and n8n-ops does not hold a `tailscale_acl` resource at all** (the `tag:n8n-server` tagOwners and SSH rules are also managed in u-rei-infra). n8n-ops only manages the `tailscale_tailnet_key` (auth key). When adding a new service to the tailnet, add its tag to u-rei-infra's `terraform/tailscale/acl.tf`, not to the new service's own repo
 
 ## Setup
 
@@ -101,11 +101,11 @@ terraform output
 
 **Plan is automated, apply is not**: `.github/workflows/terraform-plan.yml` runs `terraform plan` against `terraform/bootstrap` for every PR (including Dependabot's weekly provider-version PRs) and comments the result, using the same read-only-capable CI service account as `terraform/main`. `terraform-apply.yml` deliberately does **not** cover `terraform/bootstrap`: this directory creates the CI service account itself, its Workload Identity Federation pool, and its own project IAM bindings, so letting CI apply it would let that identity grant itself broader permissions unsupervised. Reviewing the CI-posted plan and then running `terraform apply` by hand (as above) remains the only way changes to `terraform/bootstrap` take effect.
 
-### 2. Issue a Tailscale OAuth client (manual, or reuse vaultwarden-ops')
+### 2. Issue a Tailscale OAuth client (manual)
 
-If you've already issued an OAuth client for the Terraform provider in vaultwarden-ops (with Policy File + Auth Keys scopes), you can reuse it as-is. If you need to issue a new one, follow the steps in vaultwarden-ops' README under "2. Issue a Tailscale OAuth client," additionally selecting `tag:n8n-server` for the Auth Keys tag.
+Issue an OAuth client dedicated to this repository at https://login.tailscale.com/admin/settings/oauth with **only the Auth Keys (write) scope**, and restrict its tag to `tag:n8n-server`. Do **not** grant the Policy File scope: the ACL is owned by u-rei-infra, and keeping the policy-write credential out of this repository is deliberate.
 
-Either way, before applying, check the current ACL at https://login.tailscale.com/admin/acl/file and confirm that vaultwarden-ops' `terraform/main/tailscale.tf` (the sole owner of this tailnet's ACL policy) already includes the `tag:n8n-server` tagOwners and SSH rules. If it doesn't, add and apply that entry on the vaultwarden-ops side first, before proceeding to apply this repo.
+Before applying, confirm that u-rei-infra's `terraform/tailscale/acl.tf` (the sole owner of this tailnet's ACL policy) already includes the `tag:n8n-server` tagOwners and SSH rules. If it doesn't, merge and apply that entry in u-rei-infra first.
 
 ### 3. Register GitHub Actions Secrets
 
@@ -171,7 +171,7 @@ After rollout, confirm workflows are actually running on the new n8n version (in
 
 ```
 terraform/bootstrap/  … manual, apply once. GCS state bucket, WIF Pool, CI service account
-terraform/main/       … applied continuously by GitHub Actions. VM/FW/Disk/Secret Manager/Tailscale auth key (the ACL policy itself is solely owned by vaultwarden-ops)
+terraform/main/       … applied continuously by GitHub Actions. VM/FW/Disk/Secret Manager/Tailscale auth key (the ACL policy itself is solely owned by u-rei-infra)
 n8n/                   … docker-compose.yml (Traefik + n8n)
 .github/workflows/     … terraform plan (PR, covers both terraform/main and terraform/bootstrap) / apply (main, approval-gated, terraform/main only) / n8n-deploy (changes under n8n/, approval-gated)
 ```
