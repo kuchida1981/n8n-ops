@@ -34,7 +34,7 @@ n8nは公開VM（80/443をインターネットへ開放、SSHはTailscaleとIAP
 ### D2: Ops Agentのreceiverでコンテナログとjournaldを収集する
 - `/etc/google-cloud-ops-agent/config.yaml`をstartup-scriptで生成する。
   - `fluent_forward`ではなく、`files`receiverで`/opt/n8n/docker-data/containers/*/*-json.log`を読む。
-  - `systemd_journald`receiverでjournaldを読む（Debian 13にはrsyslogが入っていない可能性があり、`/var/log/syslog`は当てにしない）。
+  - `systemd_journald`receiverでjournaldを読む。VMにはrsyslogが入っており（実機確認済み）、Ops Agentの既定の`syslog`receiverが`/var/log/syslog`を`syslog`ログとして`_Default`（30日）へ送っている。journaldを併用するのは、`_SYSTEMD_UNIT`（sshd/tailscaled/docker等）の情報が得られるため。同じ事象が両方に入るが量は小さい。保持期間を延ばすsinkには`host_journal`だけを含め、`syslog`は含めない（重複保存を避ける）。
 - 理由: Ops Agentだけで完結し、追加のエージェントやコンテナが不要。
 - 代替案: Dockerの`gcplogs`ログドライバ。→ `docker compose`のログ形式が変わり、既存のコンテナの再作成が必要。`docker logs`でローカルでも読めるようにしたいので不採用。
 - コンテナ名とログの対応づけは、ファイルパスのコンテナIDから、後段のprocessorで付与する。実装時に確認する（Open Questions）。
@@ -49,6 +49,15 @@ n8nは公開VM（80/443をインターネットへ開放、SSHはTailscaleとIAP
 - `google_logging_project_sink`で、Traefikのアクセスログ・journald・監査ログだけをこのbucketへ送る。`_Default`にも残る（排他しない）。
 - 理由: 保持期間を延ばす対象を絞り、コストを抑える。
 - 代替案: `_Default`の保持期間をプロジェクト全体で延長する。→ vaultwardenやその他のログも対象になり、影響が大きいので不採用。
+
+### D4a: audit config・log bucket・sinkは`terraform/bootstrap`に置く
+- `google_project_iam_audit_config`はプロジェクトのIAMポリシーを書き換える。CI用SAは意図的に`setIamPolicy`を持たない設計（bootstrapのコメント参照）なので、`terraform/main`には置けない。
+- log bucketとsinkも同じbootstrapに置くことで、CI用SAに書き込み系のロールを追加せずに済む。`terraform plan`のrefresh用に、読み取り専用の`roles/logging.viewer`だけをreadonlyロールへ追加する。
+- sinkのフィルタは、Ops Agentのreceiver id（`docker_containers`/`host_journal`）がそのままlog名になる性質に依存する。startup-script側のreceiver idと対で変更すること。
+
+### D2a: コンテナ名の判別は`log-opts.labels`で行う
+- Open Questionsの回答。`daemon.json`の`log-opts`に`labels: com.docker.compose.service`を指定すると、json-fileの各レコードの`attrs`にcomposeのサービス名（`traefik`/`n8n`）が入る。ファイル名にはコンテナIDしかないため、receiver側での名前解決は不要。
+- `log-opts`は新規作成のコンテナにだけ適用される。n8nコンテナは設定が変わらないとrecreateされないため、反映時に`docker compose up -d --force-recreate`が必要。
 
 ### D5: プロジェクト共通リソースはn8n-opsが所有する
 - Data Access監査ログ（`google_project_iam_audit_config`）と、log bucketは、同じプロジェクトを共有しているため、n8n-opsだけが定義する。
@@ -78,7 +87,7 @@ n8nは公開VM（80/443をインターネットへ開放、SSHはTailscaleとIAP
 
 ## Open Questions
 
-- コンテナログに、コンテナ名（`traefik`/`n8n`）のラベルを付ける方法は、`files`receiverのprocessorで足りるか、`fluent_forward`が必要か。
+- （解決済み）コンテナ名のラベルは`log-opts.labels`で付与する（D2a）。
 - アクセスログのクエリ文字列を、n8nのWebhookでトークンが入る場合に備えて落とすべきか。
 - 保持期間の既定値（90日）は妥当か、コストを見て調整するか。
 - sinkは、n8n-opsだけで両VMのログを拾うか、vaultwarden-ops側にも定義するか（vaultwarden-opsへの適用時に決める）。

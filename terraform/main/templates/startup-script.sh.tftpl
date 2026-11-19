@@ -61,10 +61,18 @@ grep -q "^$SWAPFILE " /etc/fstab || echo "$SWAPFILE none swap defaults 0 0" >> /
 # disk, so the named volumes docker-compose.yml declares (n8n_data,
 # traefik_data) survive VM destroy/recreate without any compose file
 # changes.
+#
+# log-driver/log-opts cap each container's json-file log (10m x 5) so logs
+# can't fill the disk. `labels` copies the compose service name into every
+# record's attrs, which is how Cloud Logging entries are told apart as
+# traefik vs n8n (the on-disk file name only has the container ID). These
+# options only apply to containers created after the change, so existing
+# containers need `docker compose up -d --force-recreate` once.
 mkdir -p /etc/docker
 DAEMON_JSON_CHANGED=0
-if [ "$(cat /etc/docker/daemon.json 2>/dev/null)" != '{"data-root": "/opt/n8n/docker-data"}' ]; then
-  echo '{"data-root": "/opt/n8n/docker-data"}' > /etc/docker/daemon.json
+DAEMON_JSON='{"data-root": "/opt/n8n/docker-data", "log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "5", "labels": "com.docker.compose.service"}}'
+if [ "$(cat /etc/docker/daemon.json 2>/dev/null)" != "$DAEMON_JSON" ]; then
+  echo "$DAEMON_JSON" > /etc/docker/daemon.json
   DAEMON_JSON_CHANGED=1
 fi
 
@@ -117,6 +125,54 @@ if ! systemctl is-enabled --quiet google-cloud-ops-agent.target 2>/dev/null; the
   curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
   bash add-google-cloud-ops-agent-repo.sh --also-install
   rm -f add-google-cloud-ops-agent-repo.sh
+fi
+
+# --- ops agent log collection: container logs + host journal -> Cloud Logging ---
+# Keeps logs off the VM so they survive VM re-creation and can't be wiped by
+# someone who compromised it. The receiver ids (docker_containers,
+# host_journal) become the Cloud Logging log names, and the security-logs sink
+# in terraform/bootstrap filters on exactly those names - rename both together.
+# The journal receiver adds per-unit context (_SYSTEMD_UNIT: sshd, tailscaled,
+# docker, ...) that /var/log/syslog lacks. The VM does run rsyslog, so Ops
+# Agent's built-in `syslog` receiver already ships /var/log/syslog as log name
+# `syslog` (to _Default, 30 days); the security-logs sink deliberately does
+# not copy that log, since host_journal carries the same events.
+# docker_json unwraps Docker's {"log":..,"stream":..,"time":..} envelope;
+# app_json then parses the inner `log` string (Traefik access log JSON) into
+# fields. Non-JSON lines (n8n's own logging) pass through unparsed.
+OPS_AGENT_CONFIG=/etc/google-cloud-ops-agent/config.yaml
+mkdir -p "$(dirname "$OPS_AGENT_CONFIG")"
+cat >"$OPS_AGENT_CONFIG.new" <<'OPSCONF'
+logging:
+  receivers:
+    docker_containers:
+      type: files
+      include_paths:
+        - /opt/n8n/docker-data/containers/*/*-json.log
+      record_log_file_path: true
+    host_journal:
+      type: systemd_journald
+  processors:
+    docker_json:
+      type: parse_json
+      time_key: time
+      time_format: "%Y-%m-%dT%H:%M:%S.%LZ"
+    app_json:
+      type: parse_json
+      field: log
+  service:
+    pipelines:
+      docker_pipeline:
+        receivers: [docker_containers]
+        processors: [docker_json, app_json]
+      journal_pipeline:
+        receivers: [host_journal]
+OPSCONF
+if ! cmp -s "$OPS_AGENT_CONFIG.new" "$OPS_AGENT_CONFIG"; then
+  mv "$OPS_AGENT_CONFIG.new" "$OPS_AGENT_CONFIG"
+  systemctl restart google-cloud-ops-agent
+else
+  rm -f "$OPS_AGENT_CONFIG.new"
 fi
 
 # --- tailscale (idempotent: only join if not already up) ---
