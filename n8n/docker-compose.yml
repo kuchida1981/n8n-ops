@@ -24,6 +24,19 @@ services:
       - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
       - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
         #- "--certificatesresolvers.mytlschallenge.acme.caserver"
+      # Access log as JSON on stdout: Docker's json-file driver -> Ops Agent ->
+      # Cloud Logging (see startup-script.sh.tftpl). Headers are dropped by
+      # default so credentials never reach the log; Authorization/Cookie/
+      # Set-Cookie are also listed as redact as a second guard in case the
+      # default is ever relaxed. User-Agent/Referer are kept as attack clues.
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.fields.headers.defaultmode=drop"
+      - "--accesslog.fields.headers.names.Authorization=redact"
+      - "--accesslog.fields.headers.names.Cookie=redact"
+      - "--accesslog.fields.headers.names.Set-Cookie=redact"
+      - "--accesslog.fields.headers.names.User-Agent=keep"
+      - "--accesslog.fields.headers.names.Referer=keep"
     ports:
       - "80:80"
       - "443:443"

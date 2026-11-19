@@ -8,6 +8,7 @@ resource "google_project_service" "required" {
     "storage.googleapis.com",
     "sts.googleapis.com",
     "iap.googleapis.com",
+    "logging.googleapis.com",
   ])
   project            = var.project_id
   service            = each.value
@@ -127,11 +128,14 @@ resource "google_project_iam_member" "terraform_ci_roles" {
 #   - iam.workloadIdentityPoolViewer: refresh the WIF pool/provider
 #   - iam.securityReviewer: refresh IAM policy bindings (project, service
 #     account, and bucket level) without granting the ability to change them
+#   - logging.viewer: refresh the security log bucket/sink (read-only)
 resource "google_project_iam_member" "terraform_ci_readonly_roles" {
   for_each = toset([
     "roles/serviceusage.serviceUsageViewer",
     "roles/iam.workloadIdentityPoolViewer",
     "roles/iam.securityReviewer",
+    # refresh google_logging_project_bucket_config / _sink below
+    "roles/logging.viewer",
   ])
   project = var.project_id
   role    = each.value
@@ -159,4 +163,55 @@ resource "google_project_iam_member" "n8n_vm_logging_writer" {
   project = var.project_id
   role    = "roles/logging.logWriter"
   member  = "serviceAccount:n8n-vm@${var.project_id}.iam.gserviceaccount.com"
+}
+
+# --- security logging (see openspec/changes/add-security-logging) ---
+# Lives in bootstrap rather than terraform/main for the same reason as the
+# Ops Agent IAM bindings above: google_project_iam_audit_config rewrites the
+# project IAM policy, which terraform-ci is deliberately never allowed to do.
+# The log bucket and sink sit alongside it so CI needs no extra write role.
+# This project is shared with vaultwarden-ops, so these project-wide
+# resources are owned here only and must not be redefined there.
+
+# Data Access audit logs are off by default. Secret Manager DATA_READ records
+# who read which secret version - the main trail if a credential is abused.
+resource "google_project_iam_audit_config" "secretmanager_data_read" {
+  project = var.project_id
+  service = "secretmanager.googleapis.com"
+
+  audit_log_config {
+    log_type = "DATA_READ"
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+# Dedicated bucket so retention can be raised for security-relevant logs only
+# instead of lengthening _Default (30d) for everything in the project.
+resource "google_logging_project_bucket_config" "security_logs" {
+  project        = var.project_id
+  location       = "global"
+  bucket_id      = "security-logs"
+  retention_days = var.security_log_retention_days
+  description    = "Traefik access logs, host journal and Data Access audit logs"
+
+  depends_on = [google_project_service.required]
+}
+
+# Routes (copies) the security-relevant logs into the bucket above. _Default
+# keeps receiving them too - this sink does not exclude anything.
+# docker_containers / host_journal are the Ops Agent receiver ids defined in
+# terraform/main's startup-script.sh.tftpl; Ops Agent uses the receiver id as
+# the log name.
+resource "google_logging_project_sink" "security_logs" {
+  project                = var.project_id
+  name                   = "security-logs"
+  destination            = "logging.googleapis.com/${google_logging_project_bucket_config.security_logs.id}"
+  unique_writer_identity = true
+
+  filter = join(" OR ", [
+    "log_id(\"docker_containers\")",
+    "log_id(\"host_journal\")",
+    "log_id(\"cloudaudit.googleapis.com/data_access\")",
+  ])
 }

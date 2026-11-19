@@ -13,3 +13,9 @@ variable "github_repo" {
   description = "GitHub repository allowed to assume the Terraform CI service account, in \"owner/repo\" form."
   type        = string
 }
+
+variable "security_log_retention_days" {
+  description = "Retention (days) of the dedicated security-logs bucket (access logs, host journal, Data Access audit logs). _Default's 30 days is too short to investigate an incident noticed late."
+  type        = number
+  default     = 90
+}
