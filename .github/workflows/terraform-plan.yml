@@ -91,8 +91,16 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
+      # The wrapper (on by default) makes `terraform` exit 0 for -detailed-exitcode's
+      # "changes present" code 2 (it treats 0 and 2 both as success), so the plan
+      # step's `plan_exit` below was always 0 and every plan with changes was
+      # reported as "No changes" - which would also have let auto-merge fire on
+      # a dependabot PR that changes infrastructure. Disabling the wrapper lets
+      # the real exit code through.
       - if: steps.changes.outputs.relevant == 'true'
         uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
 
       - name: Terraform Init
         if: steps.changes.outputs.relevant == 'true'
@@ -228,8 +236,16 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
+      # The wrapper (on by default) makes `terraform` exit 0 for -detailed-exitcode's
+      # "changes present" code 2 (it treats 0 and 2 both as success), so the plan
+      # step's `plan_exit` below was always 0 and every plan with changes was
+      # reported as "No changes" - which would also have let auto-merge fire on
+      # a dependabot PR that changes infrastructure. Disabling the wrapper lets
+      # the real exit code through.
       - if: steps.changes.outputs.relevant == 'true'
         uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
 
       - name: Terraform Init
         if: steps.changes.outputs.relevant == 'true'
