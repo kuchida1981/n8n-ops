@@ -161,6 +161,40 @@ n8nイメージは`n8n/docker-compose.yml`でリテラルタグ固定してお�
 
 反映後は、対象のn8nバージョンで実際にワークフローが動作していること(vaultwardenの`/alive`監視ワークフロー含む)を確認する。
 
+## セキュリティログ
+
+攻撃の痕跡は、VMの外にあるCloud Loggingに保存する。VMを再作成しても残り、VMが侵害されても消されない。アラート・通知は意図的に未整備(`add-security-logging`のスコープ外)。
+
+| 内容 | ログ名(`log_id`) | 備考 |
+|---|---|---|
+| Traefikのアクセスログ、n8n/Traefikのコンテナ出力 | `docker_containers` | JSON形式のアクセスログ。`jsonPayload.attrs."com.docker.compose.service"`が`traefik`か`n8n` |
+| ホストのjournal(sshd、tailscaled、docker、sudoなど) | `host_journal` | `_SYSTEMD_UNIT`でユニット単位に判別できる |
+| Secret Managerの読み取り(Data Access監査ログ) | `cloudaudit.googleapis.com/data_access` | どのシークレットを誰が読んだか |
+
+この3つは専用の`security-logs` bucketにも複製され、`security_log_retention_days`(既定**90日**、`terraform/bootstrap/variables.tf`)保持される。`_Default`(30日)にも残る。Admin Activity監査ログはGCPの仕様で400日保持される。VMの`/var/log/syslog`はOps Agent標準のreceiverが`syslog`として送る(30日のみ。同じ事象は`host_journal`にも入る)。
+
+クエリ例(Logs Explorerまたは`gcloud logging read`):
+
+```
+# 4xx/5xxになったリクエスト
+log_id("docker_containers") AND jsonPayload.DownstreamStatus>=400
+
+# 特定のクライアントIP
+log_id("docker_containers") AND jsonPayload.ClientHost="203.0.113.9"
+
+# SSH総当たりの試行
+log_id("host_journal") AND jsonPayload.SYSLOG_IDENTIFIER=~"sshd" AND jsonPayload.MESSAGE=~"Invalid user|Failed password"
+
+# シークレットの読み取り
+log_id("cloudaudit.googleapis.com/data_access") AND protoPayload.serviceName="secretmanager.googleapis.com"
+```
+
+知っておくこと:
+
+- **クエリ文字列はログに残る。** Traefikの`RequestPath`にはクエリ文字列が含まれる(例: `/rest/push?pushRef=...`)ため、クエリで渡した秘密はそのまま記録される。ヘッダは既定でdropし、`Authorization`/`Cookie`/`Set-Cookie`はredactにも設定している(実測で`REDACTED`と記録されることを確認済み)。ログの閲覧がプロジェクトオーナーに限られることを理由に、許容した。
+- **Dockerのログローテーションは、新しく作られたコンテナにしか適用されない。** startup-scriptが`/etc/docker/daemon.json`を変更したあと、既存のコンテナは一度作り直す必要がある: `cd /opt/n8n/app/n8n && sudo docker compose --env-file /opt/n8n/.env up -d --force-recreate`。確認は`sudo docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Config}}' $(sudo docker ps -q)`。
+- 監査設定・log bucket・sinkは`terraform/main`ではなく`terraform/bootstrap`にある。監査設定がプロジェクトのIAMポリシーを書き換えるため、CI用サービスアカウントには意図的に許可していないことによる。プロジェクトはvaultwarden-opsと共有なので、これらはこちらだけが所有する。
+
 ## ロードマップ(本リポジトリの現時点のスコープ外)
 
 - NASへの自動バックアップ(vaultwarden-opsの`add-nas-backup`パターンをn8n向けに展開する、次の別change)
