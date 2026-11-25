@@ -191,6 +191,7 @@ log_id("cloudaudit.googleapis.com/data_access") AND protoPayload.serviceName="se
 
 Things to know:
 
+- **A 200 does not mean a probe succeeded.** n8n is a single-page app and answers unknown paths (`/.env`, `/.git/config`, ...) with 200 and its index HTML. Judge by the response size/content, not the status code.
 - **Query strings are logged.** Traefik's `RequestPath` includes the query string (e.g. `/rest/push?pushRef=...`), so a secret passed in a query string would be recorded. Headers are not: they are dropped by default, and `Authorization`/`Cookie`/`Set-Cookie` are additionally set to redact (verified: logged as `REDACTED`). Accepted trade-off; log access is limited to the project owner.
 - **Docker log rotation only affects newly created containers.** After changing `/etc/docker/daemon.json` (done by the startup-script), existing containers must be recreated once: `cd /opt/n8n/app/n8n && sudo docker compose --env-file /opt/n8n/.env up -d --force-recreate`. Check with `sudo docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Config}}' $(sudo docker ps -q)`.
 - The audit config, log bucket and sink live in `terraform/bootstrap` (not `terraform/main`) because the audit config rewrites the project IAM policy, which the CI service account is deliberately not allowed to do. The project is shared with vaultwarden-ops, so these resources are owned here only.

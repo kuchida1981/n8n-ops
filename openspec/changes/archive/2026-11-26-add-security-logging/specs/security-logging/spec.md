@@ -30,7 +30,7 @@
 - **THEN** 古いログファイルが破棄され、1コンテナあたりのログ総量は`max-size`×`max-file`を超えない
 
 ### Requirement: Data Access監査ログを有効化する
-システムは、Secret ManagerのDATA_READおよびIAP/Compute Engineへの関連アクセスについて、Data Access監査ログを有効にしなければならない(SHALL)。この設定はプロジェクト共通リソースであり、n8n-opsのTerraformのみが管理する(SHALL)。
+システムは、Secret ManagerのDATA_READについて、Data Access監査ログを有効にしなければならない(SHALL)。この設定はプロジェクト共通リソースであり、n8n-opsのTerraformのみが管理する(SHALL)。
 
 #### Scenario: シークレット読み取りが記録される
 - **WHEN** あるプリンシパルがSecret Managerのシークレットバージョンにアクセスする
