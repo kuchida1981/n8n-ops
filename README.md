@@ -161,6 +161,40 @@ The n8n image is pinned to a literal tag in `n8n/docker-compose.yml`; updates go
 
 After rollout, confirm workflows are actually running on the new n8n version (including vaultwarden's `/alive` monitoring workflow).
 
+## Security logging
+
+Attack traces are kept in Cloud Logging, outside the VM, so they survive VM re-creation and can't be wiped by someone who compromised it. Alerting/notification is intentionally not set up yet (out of scope for `add-security-logging`).
+
+| What | Log name (`log_id`) | Notes |
+|---|---|---|
+| Traefik access log + n8n/Traefik container output | `docker_containers` | JSON access log; `jsonPayload.attrs."com.docker.compose.service"` is `traefik` or `n8n` |
+| Host journal (sshd, tailscaled, docker, sudo, ...) | `host_journal` | per-unit context via `_SYSTEMD_UNIT` |
+| Secret Manager reads (Data Access audit log) | `cloudaudit.googleapis.com/data_access` | who read which secret version |
+
+These three are also copied to the dedicated `security-logs` bucket, retained for `security_log_retention_days` (default **90 days**, `terraform/bootstrap/variables.tf`). They also stay in `_Default` (30 days). Admin Activity audit logs are kept 400 days by GCP itself. VM `/var/log/syslog` is shipped by Ops Agent's built-in receiver as `syslog` (30 days only; `host_journal` carries the same events).
+
+Example queries (Logs Explorer or `gcloud logging read`):
+
+```
+# Requests that got a 4xx/5xx
+log_id("docker_containers") AND jsonPayload.DownstreamStatus>=400
+
+# One client IP
+log_id("docker_containers") AND jsonPayload.ClientHost="203.0.113.9"
+
+# SSH brute force attempts
+log_id("host_journal") AND jsonPayload.SYSLOG_IDENTIFIER=~"sshd" AND jsonPayload.MESSAGE=~"Invalid user|Failed password"
+
+# Who read secrets
+log_id("cloudaudit.googleapis.com/data_access") AND protoPayload.serviceName="secretmanager.googleapis.com"
+```
+
+Things to know:
+
+- **Query strings are logged.** Traefik's `RequestPath` includes the query string (e.g. `/rest/push?pushRef=...`), so a secret passed in a query string would be recorded. Headers are not: they are dropped by default, and `Authorization`/`Cookie`/`Set-Cookie` are additionally set to redact (verified: logged as `REDACTED`). Accepted trade-off; log access is limited to the project owner.
+- **Docker log rotation only affects newly created containers.** After changing `/etc/docker/daemon.json` (done by the startup-script), existing containers must be recreated once: `cd /opt/n8n/app/n8n && sudo docker compose --env-file /opt/n8n/.env up -d --force-recreate`. Check with `sudo docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Config}}' $(sudo docker ps -q)`.
+- The audit config, log bucket and sink live in `terraform/bootstrap` (not `terraform/main`) because the audit config rewrites the project IAM policy, which the CI service account is deliberately not allowed to do. The project is shared with vaultwarden-ops, so these resources are owned here only.
+
 ## Roadmap (currently out of scope for this repo)
 
 - Automated backups to NAS (extending vaultwarden-ops' `add-nas-backup` pattern to n8n, as a separate future change)
