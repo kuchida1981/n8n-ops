@@ -1,9 +1,9 @@
 ## 1. 事前確認（すべて完了するまで無効化しない）
 
-- [ ] 1.1 運用者が `gcloud compute ssh n8n --zone us-west1-b --tunnel-through-iap` で新規接続でき、`sudo -n true`が通ることを確認する
-- [ ] 1.2 運用者が `gcloud compute ssh vaultwarden --zone us-west1-b --tunnel-through-iap` で新規接続でき、`sudo -n true`が通ることを確認する
+- [x] 1.1 運用者が `gcloud compute ssh n8n --zone us-west1-b --tunnel-through-iap` で新規接続でき、`sudo -n true`が通ることを確認する（2026-11-26 OK）
+- [x] 1.2 運用者が `gcloud compute ssh vaultwarden --zone us-west1-b --tunnel-through-iap` で新規接続でき、`sudo -n true`が通ることを確認する（2026-11-26 OK）
 - [ ] 1.3 `tailscale ssh`が使える端末があるかを確認し、結果を記録する（使えなくても先へ進む。design.md D3）
-- [ ] 1.4 公開IPの22番に直接つないでいる人・自動処理（手元のssh config、n8nのSSHノード、他のリポジトリのスクリプト）がないかを運用者に確認する
+- [x] 1.4 公開IPの22番に直接つないでいる人・自動処理（手元のssh config、n8nのSSHノード、他のリポジトリのスクリプト）がないかを運用者に確認する（2026-11-26、運用者の回答: 22番/SSHを使う自動処理はないはず。両リポジトリの全ワークフローのSSHは`--tunnel-through-iap`を使うことを確認）
 - [ ] 1.5 インスタンス一覧とファイアウォールルールを再取得し、design.mdの表から変わっていないことを確認する
 
 ## 2. 無効化
