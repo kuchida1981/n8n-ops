@@ -26,19 +26,17 @@ resource "google_compute_firewall" "allow_web" {
 # rather than GCP's network stack, so no corresponding ingress rule is
 # needed here.
 #
-# NOTE: the GCP project also has a legacy `default-allow-ssh` firewall rule
-# that is not scoped to any target tag, and therefore still exposes port 22
-# network-wide (affecting this VM and vaultwarden's alike) regardless of the
-# rule below. Removing that legacy rule is out of scope for this change -
-# see the migrate-n8n-to-iac proposal's roadmap notes.
+# NOTE: GCP's legacy `default-allow-ssh` rule (no target tag, so it exposed
+# port 22 on every VM in the project, vaultwarden's included) was disabled by
+# hand on 2026-11-26 and is due to be deleted - it is not managed by any
+# Terraform. See openspec's remove-default-allow-ssh change.
 
 # n8n-deploy.yml reaches the VM via `gcloud compute ssh --tunnel-through-iap`
 # (see add-n8n-deploy-pipeline's design.md), which - unlike `tailscale ssh` -
 # actually forwards a tcp:22 packet into the VPC via IAP, so it needs its own
-# ingress rule. Scoped to IAP's documented source range rather than relying
-# on the legacy `default-allow-ssh` rule above, since that rule is a known
-# issue slated for future removal and this shouldn't silently break if/when
-# it goes away.
+# ingress rule, scoped to IAP's documented source range. With
+# `default-allow-ssh` gone this is what keeps both CI deploys and operator IAP
+# SSH working.
 resource "google_compute_firewall" "allow_iap_ssh" {
   name    = "n8n-allow-iap-ssh"
   project = var.project_id

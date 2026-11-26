@@ -5,7 +5,7 @@
 Infrastructure for self-hosting a personal instance of n8n (workflow automation) on GCP Compute Engine (us-west1). Terraform manages the GCP resources, GitHub Actions handles CI/CD, and Tailscale protects administrative access. This repo follows the same structural pattern as its sister project [vaultwarden-ops](https://github.com/kuchida1981/vaultwarden-ops).
 
 - Public URL: `https://n8n.u-rei.com`
-- `tailscale ssh` is the only sanctioned SSH path (fixing the legacy `default-allow-ssh` rule that still lingers in the GCP project is out of scope for this repo — see Roadmap)
+- SSH is not reachable from the public internet. Operators use `tailscale ssh`, or an IAP tunnel (`gcloud compute ssh n8n --zone us-west1-b --tunnel-through-iap`; also what CI uses). The legacy project-wide `default-allow-ssh` rule was disabled on 2026-11-26 and is due to be deleted (`openspec/changes/remove-default-allow-ssh`)
 - n8n's `/alive` monitoring workflow is what keeps watch over vaultwarden's liveness, so n8n's own data migration directly affects the continuity of that workflow
 - Data persistence: Docker's entire `data-root` lives on a dedicated Persistent Disk, keeping the named volumes (`n8n_data`/`traefik_data`) independent of the VM's lifecycle
 - The n8n image is pinned to a literal tag; Dependabot detects new versions and opens update PRs
@@ -32,10 +32,8 @@ flowchart TB
     internet -- "port 443 only
     (80 redirects for TLS)" --> traefik
     admin -- "Tailscale (WireGuard)
-    tailscale ssh only" --> vm
+    tailscale ssh (or IAP tunnel)" --> vm
 
-    note["※ project-wide legacy `default-allow-ssh` rule not yet fixed"]
-    vm -.-> note
 ```
 
 Terraform is split into two stages: `terraform/bootstrap` (manual apply, once) and `terraform/main` (applied continuously by GitHub Actions).
@@ -135,7 +133,7 @@ After the apply completes, use the static external IP it outputs to manually cre
 
 Verify the following:
 - `https://n8n-test.u-rei.com` has a valid Let's Encrypt certificate and shows n8n's initial setup screen
-- You can connect to the VM with `tailscale ssh n8n`
+- You can connect to the VM with `tailscale ssh n8n`, or, if the tailnet policy does not allow it from your device, with `gcloud compute ssh n8n --zone us-west1-b --tunnel-through-iap`
 - Swap is active, per `free -h`/`swapon --show`
 - Rebooting the VM doesn't cause the startup-script to double-run
 
@@ -198,7 +196,7 @@ Things to know:
 ## Roadmap (currently out of scope for this repo)
 
 - Automated backups to NAS (extending vaultwarden-ops' `add-nas-backup` pattern to n8n, as a separate future change)
-- Fixing the legacy `default-allow-ssh`/`default-allow-rdp` firewall rules that apply project-wide (a known issue that also affects the vaultwarden VM)
+- Cleaning up the legacy `default-allow-rdp` firewall rule that applies project-wide (`default-allow-ssh` is handled by `remove-default-allow-ssh`)
 - Unifying the reverse proxy on Caddy (Traefik is kept as-is for now, but under consideration for the future)
 
 ## Directory structure
