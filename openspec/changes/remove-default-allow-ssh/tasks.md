@@ -26,3 +26,4 @@
 - [ ] 4.1 無効化から1週間、締め出しや失敗する処理がないことを確認する
 - [ ] 4.2 運用者の承認を得て `gcloud compute firewall-rules delete default-allow-ssh` を実行する
 - [ ] 4.3 SSHの`Invalid user`がn8nのログに出なくなったことを確認する
+- [ ] 4.4 archiveし、main specへの反映後に`tailscale-connectivity`の末尾の**Note**が残っているか・内容が正しいかを確認する
