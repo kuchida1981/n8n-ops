@@ -1,5 +1,10 @@
 #!/bin/bash
-set -euxo pipefail
+# No `-x`: this script reads secrets into variables, and its output goes to
+# the journal, syslog (shipped to Cloud Logging) and, when terraform-apply
+# re-runs it, the CI log of a public repository. Tracing would print every
+# secret value there. Never add `set -x` back; the `== startup:` markers
+# show how far a run got.
+set -euo pipefail
 
 PROJECT_ID="${project_id}"
 # DOMAIN is used below via $${DOMAIN...} - the doubled $$ is Terraform
@@ -23,6 +28,7 @@ DOMAIN_NAME="$${DOMAIN#*.}"
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl gnupg jq git unattended-upgrades rsync
 
+echo "== startup: automatic security updates"
 # --- automatic security updates ---
 cat >/etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
@@ -30,6 +36,7 @@ APT::Periodic::Unattended-Upgrade "1";
 EOF
 systemctl enable --now unattended-upgrades
 
+echo "== startup: data disk"
 # --- data disk: format once, mount idempotently ---
 # Mounted before Docker is installed so `data-root` below can point here
 # from Docker's very first start - Docker never writes application data to
@@ -44,6 +51,7 @@ if ! mountpoint -q /opt/n8n/docker-data; then
 fi
 grep -q n8n-data /etc/fstab || echo "$DATA_DISK /opt/n8n/docker-data ext4 discard,defaults,nofail 0 2" >> /etc/fstab
 
+echo "== startup: swap"
 # --- swap: e2-micro's 1GB RAM isn't enough for traefik+n8n without it ---
 SWAPFILE=/swapfile
 if [ ! -f "$SWAPFILE" ]; then
@@ -56,6 +64,7 @@ if ! swapon --show=NAME --noheadings | grep -q "^$SWAPFILE$"; then
 fi
 grep -q "^$SWAPFILE " /etc/fstab || echo "$SWAPFILE none swap defaults 0 0" >> /etc/fstab
 
+echo "== startup: docker"
 # --- docker ---
 # data-root lives on the attached data disk (see above), not the boot
 # disk, so the named volumes docker-compose.yml declares (n8n_data,
@@ -89,6 +98,7 @@ elif [ "$DAEMON_JSON_CHANGED" = "1" ]; then
   systemctl restart docker
 fi
 
+echo "== startup: containerd"
 # --- containerd: image/layer storage also lives on the attached data disk ---
 # Docker's own `data-root` above does NOT cover the system containerd.io
 # service - its config.toml ships with `root` commented out, defaulting to
@@ -119,6 +129,7 @@ if [ "$CONTAINERD_CONFIG_CHANGED" = "1" ]; then
   systemctl restart docker
 fi
 
+echo "== startup: google cloud ops agent"
 # --- google cloud ops agent (memory/disk/process metrics; CPU and network
 # already come from the Compute Engine API itself and don't need this) ---
 if ! systemctl is-enabled --quiet google-cloud-ops-agent.target 2>/dev/null; then
@@ -127,6 +138,7 @@ if ! systemctl is-enabled --quiet google-cloud-ops-agent.target 2>/dev/null; the
   rm -f add-google-cloud-ops-agent-repo.sh
 fi
 
+echo "== startup: ops agent log collection"
 # --- ops agent log collection: container logs + host journal -> Cloud Logging ---
 # Keeps logs off the VM so they survive VM re-creation and can't be wiped by
 # someone who compromised it. The receiver ids (docker_containers,
@@ -175,6 +187,7 @@ else
   rm -f "$OPS_AGENT_CONFIG.new"
 fi
 
+echo "== startup: tailscale"
 # --- tailscale (idempotent: only join if not already up) ---
 if ! command -v tailscale >/dev/null 2>&1; then
   curl -fsSL https://tailscale.com/install.sh | sh
@@ -195,6 +208,7 @@ if [ "$(tailscale status --json | jq -r .BackendState)" != "Running" ]; then
   tailscale up --authkey="$TS_AUTHKEY" --ssh --hostname=n8n --advertise-tags=tag:n8n-server
 fi
 
+echo "== startup: application source"
 # --- application source (this is a public repo; no credentials needed) ---
 # A pull failure (e.g. transient network blip during a reboot) must not
 # abort the whole script via `set -e` - falling back to the already-cloned
@@ -225,3 +239,5 @@ docker volume create traefik_data >/dev/null
 
 cd "$APP_DIR/n8n"
 docker compose --env-file /opt/n8n/.env up -d
+
+echo "== startup: done"
