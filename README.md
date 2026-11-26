@@ -194,9 +194,23 @@ Things to know:
 - **Docker log rotation only affects newly created containers.** After changing `/etc/docker/daemon.json` (done by the startup-script), existing containers must be recreated once: `cd /opt/n8n/app/n8n && sudo docker compose --env-file /opt/n8n/.env up -d --force-recreate`. Check with `sudo docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Config}}' $(sudo docker ps -q)`.
 - The audit config, log bucket and sink live in `terraform/bootstrap` (not `terraform/main`) because the audit config rewrites the project IAM policy, which the CI service account is deliberately not allowed to do. The project is shared with vaultwarden-ops, so these resources are owned here only.
 
+## Security alerts
+
+Cloud Monitoring emails only about events that call for action (probes and brute force are logged, not alerted). Defined in `terraform/bootstrap/alerting.tf`, applied by hand; the recipient and operator addresses are sensitive variables (`TF_VAR_alert_email`, `TF_VAR_operator_email`; CI plan uses the `ALERT_EMAIL` / `OPERATOR_EMAIL` secrets).
+
+| Alert | Fires when | What to check |
+|---|---|---|
+| n8n: unexpected SSH login | sshd accepts anything other than CI or the operator arriving through IAP | user and source IP in the log entry |
+| Secret Manager: unexpected principal | a secret version is read by a principal not on the list | principal and secret; revoke and rotate if unknown |
+| GCP: firewall or IAM change | any firewall rule or IAM policy change, whoever made it | does it match your own change or a Terraform apply? |
+| n8n: repeated login failures | 5+ failed logins (401/429) in 10 minutes | client IP in the access log |
+
+Expect firewall/IAM mails after Terraform applies. Not covered: Tailscale SSH logins, a stopped logging agent, Vaultwarden-specific events.
+
 ## Roadmap (currently out of scope for this repo)
 
 - Delivering security alerts to Discord (email first; follow-up to `add-security-alerting`)
+- Extending the alerts to Vaultwarden-specific events (failed logins), once they have proven themselves on n8n
 - Deciding what to do with Tailscale SSH (`tailscale ssh` has never worked for the operator and its logins are not covered by alerts: make it usable, or turn it off)
 - Automated backups to NAS (extending vaultwarden-ops' `add-nas-backup` pattern to n8n, as a separate future change)
 - Cleaning up the legacy `default-allow-rdp` firewall rule that applies project-wide (`default-allow-ssh` is handled by `remove-default-allow-ssh`)

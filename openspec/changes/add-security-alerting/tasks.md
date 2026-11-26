@@ -1,17 +1,17 @@
 ## 1. 事前確認
 
-- [ ] 1.1 料金を公式の料金ページで確認し、proposalの記述を直す
-- [ ] 1.2 許可リストに入れる主体とOS Loginのユーザー名を、ログから確定する
+- [x] 1.1 料金を公式の料金ページで確認し、proposalの記述を直す（公式ページで確認し、proposalを修正）
+- [x] 1.2 許可リストに入れる主体とOS Loginのユーザー名を、ログから確定する（読み取りの主体は2つのVMのSAと2つのCIのSA、運用者。CIのOS Loginユーザーが`sa_<unique_id>`と一致することを確認）
 - [x] 1.3 Tailscale SSHの扱いを決める（2026-11-26: 成功した実績がないため条件から外し、今後検討する）
 
 ## 2. 実装（terraform/bootstrap）
 
-- [ ] 2.1 `monitoring.googleapis.com`の有効化と、readonlyロールへの`roles/monitoring.viewer`の追加
-- [ ] 2.2 sensitiveな変数（通知先、運用者の値）と、メールの通知チャンネル
-- [ ] 2.3 SSH、シークレット読み取り、ファイアウォール・IAM変更のログ一致アラート（rate limitつき）
-- [ ] 2.4 ログイン失敗のログベースメトリクスと閾値アラート
-- [ ] 2.5 bootstrapのplanのワークフローに変数を渡し、GitHub Secretsを登録する（登録は運用者）
-- [ ] 2.6 PRのplanを確認し、ログに該当の値が平文で出ていないことを確認する
+- [x] 2.1 `monitoring.googleapis.com`の有効化と、readonlyロールへの`roles/monitoring.viewer`の追加
+- [x] 2.2 sensitiveな変数（通知先、運用者の値）と、メールの通知チャンネル
+- [x] 2.3 SSH、シークレット読み取り、ファイアウォール・IAM変更のログ一致アラート（rate limitつき）（手元のplanが組み立てたフィルタを過去30日のログに適用: SSHは11-19の公開IPからの2件のみ一致、シークレットは0件、ファイアウォール・IAMは20件）
+- [x] 2.4 ログイン失敗のログベースメトリクスと閾値アラート（過去30日の一致は0件。発火は3.3で確認）
+- [x] 2.5 bootstrapのplanのワークフローに変数を渡し、GitHub Secretsを登録する（登録は運用者）（Secretsは2026-11-27に運用者が登録）
+- [x] 2.6 PRのplanを確認し、ログに該当の値が平文で出ていないことを確認する（PR #116: plan-bootstrapは8追加。planのログとPRコメントにメールアドレス・OS Login名はなし）
 
 ## 3. 反映と確認
 
@@ -23,5 +23,5 @@
 
 ## 4. ドキュメント
 
-- [ ] 4.1 README.md/README.ja.mdに、アラートの一覧と受け取ったときの確認手順を追記する
-- [ ] 4.2 README.md/README.ja.mdのロードマップに、Discordへの通知とVaultwardenへの展開を載せる
+- [x] 4.1 README.md/README.ja.mdに、アラートの一覧と受け取ったときの確認手順を追記する
+- [x] 4.2 README.md/README.ja.mdのロードマップに、Discordへの通知とVaultwardenへの展開を載せる

@@ -9,6 +9,7 @@ resource "google_project_service" "required" {
     "sts.googleapis.com",
     "iap.googleapis.com",
     "logging.googleapis.com",
+    "monitoring.googleapis.com",
   ])
   project            = var.project_id
   service            = each.value
@@ -136,6 +137,8 @@ resource "google_project_iam_member" "terraform_ci_readonly_roles" {
     "roles/iam.securityReviewer",
     # refresh google_logging_project_bucket_config / _sink below
     "roles/logging.viewer",
+    # refresh the notification channel and alert policies in alerting.tf
+    "roles/monitoring.viewer",
   ])
   project = var.project_id
   role    = each.value
