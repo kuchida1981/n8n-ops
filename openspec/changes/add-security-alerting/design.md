@@ -44,6 +44,7 @@ Cloud Monitoringのwebhookは、Discordの形式と合わないので中継が�
 
 ## Risks / Trade-offs
 
+- [Tailscale SSHのログインは検知できない] → 今回は受け入れる。VMは`tailscale up --ssh`で受け付けており、ログインは`sshd`の記録に出ない。tailnetのACLが許可する相手に限られる。`tailscale ssh`を使えるようにするか、無効にするかとあわせて今後検討する。
 - [メールに気づかない] → 受け入れる。Discordをロードマップに残す。
 - [自分の操作で通知が来る] → 期待する通知として扱い、rate limitで抑える。
 - [公開ログに通知先や主体が出る] → sensitive変数とGitHub Secrets。PRのplanのログを、値を表示せずに検索して確認する。
@@ -56,5 +57,4 @@ bootstrapを手元でapplyする。VMへの影響はない。戻す場合は、�
 
 ## Open Questions
 
-- Tailscale SSHの**成功**がjournaldにどう記録されるか。確認できたのは拒否の形式だけ。
 - Cloud Run等、別の用途のリソースの操作で、`SetIamPolicy`の通知が増えないか。

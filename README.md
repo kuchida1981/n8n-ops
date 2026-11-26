@@ -197,6 +197,7 @@ Things to know:
 ## Roadmap (currently out of scope for this repo)
 
 - Delivering security alerts to Discord (email first; follow-up to `add-security-alerting`)
+- Deciding what to do with Tailscale SSH (`tailscale ssh` has never worked for the operator and its logins are not covered by alerts: make it usable, or turn it off)
 - Automated backups to NAS (extending vaultwarden-ops' `add-nas-backup` pattern to n8n, as a separate future change)
 - Cleaning up the legacy `default-allow-rdp` firewall rule that applies project-wide (`default-allow-ssh` is handled by `remove-default-allow-ssh`)
 - Unifying the reverse proxy on Caddy (Traefik is kept as-is for now, but under consideration for the future)
