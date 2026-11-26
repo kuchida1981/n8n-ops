@@ -205,7 +205,7 @@ Cloud Monitoring emails only about events that call for action (probes and brute
 | GCP: firewall or IAM change | any firewall rule or IAM policy change, whoever made it | does it match your own change or a Terraform apply? |
 | n8n: repeated login failures | 5+ failed logins (401/429) in 10 minutes | client IP in the access log |
 
-Expect firewall/IAM mails after Terraform applies. Not covered: Tailscale SSH logins, a stopped logging agent, Vaultwarden-specific events.
+To test the SSH and secret alerts, apply once with `TF_VAR_operator_email="dummy@example.com"` (you become "unexpected"), wait at least 10 minutes for the policy change to take effect, SSH in / read a secret, then **apply again with the real value**. Expect firewall/IAM mails after Terraform applies. Not covered: Tailscale SSH logins, a stopped logging agent, Vaultwarden-specific events.
 
 ## Roadmap (currently out of scope for this repo)
 

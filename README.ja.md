@@ -205,7 +205,7 @@ Cloud Monitoringは、行動が必要な事象だけをメールする(探索や
 | GCP: ファイアウォール・IAMの変更 | 実行者を問わず、ルールかIAMポリシーが変わった | 自分の操作やTerraformのapplyと一致するか |
 | n8n: ログイン失敗の連続 | 10分間に5回以上の失敗(401/429) | アクセスログのクライアントIP |
 
-Terraformのapplyの後には、ファイアウォール・IAMのメールが届く。対象外: Tailscale SSHのログイン、ログ収集エージェントの停止、Vaultwarden固有の事象。
+SSHとシークレットのアラートを試すには、`TF_VAR_operator_email="dummy@example.com"`で一度applyし(自分が「想定外」になる)、ポリシーが反映されるまで10分以上待ってからSSH・シークレット読み取りを行い、**必ず元の値でapplyし直す**。Terraformのapplyの後には、ファイアウォール・IAMのメールが届く。対象外: Tailscale SSHのログイン、ログ収集エージェントの停止、Vaultwarden固有の事象。
 
 ## ロードマップ(本リポジトリの現時点のスコープ外)
 
