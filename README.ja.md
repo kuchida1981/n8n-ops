@@ -196,6 +196,8 @@ log_id("cloudaudit.googleapis.com/data_access") AND protoPayload.serviceName="se
 
 ## ロードマップ(本リポジトリの現時点のスコープ外)
 
+- セキュリティアラートのDiscordへの通知(まずはメール。`add-security-alerting`の後続)
+- Tailscale SSHの扱いの整理(`tailscale ssh`は使えた実績がなく、アラートの対象外。使えるようにするか、無効にするか)
 - NASへの自動バックアップ(vaultwarden-opsの`add-nas-backup`パターンをn8n向けに展開する、次の別change)
 - GCPプロジェクト全体に効いているlegacyな`default-allow-rdp`ファイアウォールルールの整理(`default-allow-ssh`は`remove-default-allow-ssh`で対応)
 - リバースプロキシのCaddyへの統一(Traefikの現状維持を優先しているが、将来検討)
