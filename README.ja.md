@@ -5,7 +5,7 @@
 自分用のn8n(ワークフロー自動化)を、GCP Compute Engine(us-west1)上でセルフホスティングするためのインフラ一式。TerraformでGCPリソースを、GitHub ActionsでCI/CDを、Tailscaleで管理系アクセスを保護する。姉妹プロジェクト[vaultwarden-ops](https://github.com/kuchida1981/vaultwarden-ops)と同じ構成パターンを踏襲している。
 
 - 公開URL: `https://n8n.u-rei.com`
-- SSHは`tailscale ssh`経由のみを正規経路とする(ただしGCPプロジェクトに残る legacy な`default-allow-ssh`ルールの是正は本リポジトリのスコープ外。ロードマップ参照)
+- SSHはインターネットから直接到達できない。運用者は`tailscale ssh`か、IAP tunnel(`gcloud compute ssh n8n --zone us-west1-b --tunnel-through-iap`。CIもこの経路)を使う。プロジェクト全体に効いていたlegacyな`default-allow-ssh`は2026-11-26に無効化し、削除予定(`openspec/changes/remove-default-allow-ssh`)
 - n8nの`/alive`監視ワークフローがvaultwardenの死活監視を担っており、n8n自身のデータ移行はこのワークフローの継続性に直結する
 - データ永続化: 専用Persistent Disk上にDockerの`data-root`ごと配置し、named volume(`n8n_data`/`traefik_data`)をVMのライフサイクルから独立させる
 - n8nイメージはリテラルタグで固定し、Dependabotが新バージョンを検知して更新PRを作成する
@@ -32,10 +32,8 @@ flowchart TB
     internet -- "443のみ
     (80はTLS用リダイレクト)" --> traefik
     admin -- "Tailscale (WireGuard)
-    tailscale sshのみ" --> vm
+    tailscale ssh(またはIAP tunnel)" --> vm
 
-    note["※プロジェクト全体のlegacy `default-allow-ssh`ルールは未是正"]
-    vm -.-> note
 ```
 
 Terraformは`terraform/bootstrap`(1回だけ手動apply)と`terraform/main`(GitHub Actionsが継続的にapply)の2段構成。
@@ -135,7 +133,7 @@ apply完了後、出力された静的External IPを使い、`u-rei.com`のDNS�
 
 以下を確認する:
 - `https://n8n-test.u-rei.com`でLet's Encrypt証明書が有効になっており、n8nの初期セットアップ画面が表示される
-- `tailscale ssh n8n`でVMに接続できる
+- `tailscale ssh n8n`でVMに接続できる。端末がtailnetのポリシーで許可されていない場合は`gcloud compute ssh n8n --zone us-west1-b --tunnel-through-iap`
 - `free -h`/`swapon --show`でswapが有効
 - VM再起動後もstartup-scriptの再実行で二重処理が起きない
 
@@ -198,7 +196,7 @@ log_id("cloudaudit.googleapis.com/data_access") AND protoPayload.serviceName="se
 ## ロードマップ(本リポジトリの現時点のスコープ外)
 
 - NASへの自動バックアップ(vaultwarden-opsの`add-nas-backup`パターンをn8n向けに展開する、次の別change)
-- GCPプロジェクト全体に効いている legacy な`default-allow-ssh`/`default-allow-rdp`ファイアウォールルールの是正(vaultwarden VMにも影響する既知の問題)
+- GCPプロジェクト全体に効いているlegacyな`default-allow-rdp`ファイアウォールルールの整理(`default-allow-ssh`は`remove-default-allow-ssh`で対応)
 - リバースプロキシのCaddyへの統一(Traefikの現状維持を優先しているが、将来検討)
 
 ## ディレクトリ構成
