@@ -194,9 +194,23 @@ log_id("cloudaudit.googleapis.com/data_access") AND protoPayload.serviceName="se
 - **Dockerのログローテーションは、新しく作られたコンテナにしか適用されない。** startup-scriptが`/etc/docker/daemon.json`を変更したあと、既存のコンテナは一度作り直す必要がある: `cd /opt/n8n/app/n8n && sudo docker compose --env-file /opt/n8n/.env up -d --force-recreate`。確認は`sudo docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Config}}' $(sudo docker ps -q)`。
 - 監査設定・log bucket・sinkは`terraform/main`ではなく`terraform/bootstrap`にある。監査設定がプロジェクトのIAMポリシーを書き換えるため、CI用サービスアカウントには意図的に許可していないことによる。プロジェクトはvaultwarden-opsと共有なので、これらはこちらだけが所有する。
 
+## セキュリティアラート
+
+Cloud Monitoringは、行動が必要な事象だけをメールする(探索や総当たりは記録するが通知しない)。定義は`terraform/bootstrap/alerting.tf`で、手元でapplyする。通知先と運用者のアドレスはsensitiveな変数(`TF_VAR_alert_email`、`TF_VAR_operator_email`。CIのplanはSecretsの`ALERT_EMAIL`/`OPERATOR_EMAIL`を使う)。
+
+| アラート | 鳴る条件 | 確認すること |
+|---|---|---|
+| n8n: 想定外のSSHログイン | IAP経由のCI・運用者以外のログインがsshdで成功した | ログのユーザーと送信元IP |
+| Secret Manager: 想定外の主体 | 許可リストにない主体がシークレットを読んだ | 主体とシークレット。心当たりがなければ権限を剥奪して作り直す |
+| GCP: ファイアウォール・IAMの変更 | 実行者を問わず、ルールかIAMポリシーが変わった | 自分の操作やTerraformのapplyと一致するか |
+| n8n: ログイン失敗の連続 | 10分間に5回以上の失敗(401/429) | アクセスログのクライアントIP |
+
+Terraformのapplyの後には、ファイアウォール・IAMのメールが届く。対象外: Tailscale SSHのログイン、ログ収集エージェントの停止、Vaultwarden固有の事象。
+
 ## ロードマップ(本リポジトリの現時点のスコープ外)
 
 - セキュリティアラートのDiscordへの通知(まずはメール。`add-security-alerting`の後続)
+- Vaultwarden固有の事象(ログイン失敗)へのアラートの展開(n8nで実績を作ってから)
 - Tailscale SSHの扱いの整理(`tailscale ssh`は使えた実績がなく、アラートの対象外。使えるようにするか、無効にするか)
 - NASへの自動バックアップ(vaultwarden-opsの`add-nas-backup`パターンをn8n向けに展開する、次の別change)
 - GCPプロジェクト全体に効いているlegacyな`default-allow-rdp`ファイアウォールルールの整理(`default-allow-ssh`は`remove-default-allow-ssh`で対応)

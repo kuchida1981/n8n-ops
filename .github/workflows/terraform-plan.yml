@@ -257,6 +257,8 @@ jobs:
         env:
           TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
           TF_VAR_github_repo: ${{ github.repository }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          TF_VAR_operator_email: ${{ secrets.OPERATOR_EMAIL }}
         # See the "plan" job's Terraform Plan step above for why this is
         # wrapped in `if`, what -detailed-exitcode buys us, and why
         # -lock-timeout replaced a concurrency group for state-lock safety.
