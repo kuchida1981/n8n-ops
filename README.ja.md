@@ -189,6 +189,7 @@ log_id("cloudaudit.googleapis.com/data_access") AND protoPayload.serviceName="se
 
 知っておくこと:
 
+- **200は探索の成功を意味しない。** n8nはSPAのため、存在しないパス(`/.env`、`/.git/config`など)にも200でトップのHTMLを返す。成否はステータスではなく、応答のサイズや内容で判断する。
 - **クエリ文字列はログに残る。** Traefikの`RequestPath`にはクエリ文字列が含まれる(例: `/rest/push?pushRef=...`)ため、クエリで渡した秘密はそのまま記録される。ヘッダは既定でdropし、`Authorization`/`Cookie`/`Set-Cookie`はredactにも設定している(実測で`REDACTED`と記録されることを確認済み)。ログの閲覧がプロジェクトオーナーに限られることを理由に、許容した。
 - **Dockerのログローテーションは、新しく作られたコンテナにしか適用されない。** startup-scriptが`/etc/docker/daemon.json`を変更したあと、既存のコンテナは一度作り直す必要がある: `cd /opt/n8n/app/n8n && sudo docker compose --env-file /opt/n8n/.env up -d --force-recreate`。確認は`sudo docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Config}}' $(sudo docker ps -q)`。
 - 監査設定・log bucket・sinkは`terraform/main`ではなく`terraform/bootstrap`にある。監査設定がプロジェクトのIAMポリシーを書き換えるため、CI用サービスアカウントには意図的に許可していないことによる。プロジェクトはvaultwarden-opsと共有なので、これらはこちらだけが所有する。
